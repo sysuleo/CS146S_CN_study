@@ -437,6 +437,25 @@ h1 {
 .weeks { margin-top: 42px; }
 .week-block { margin-bottom: 46px; }
 .week-head { display: flex; align-items: center; gap: 13px; margin-bottom: 15px; }
+.week-jump {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 1px solid transparent;
+  transition: color .18s ease, border-color .18s ease;
+}
+.week-jump:hover { color: #8c1515; text-decoration: none; border-bottom-color: rgba(140, 21, 21, .35); }
+.week-empty {
+  margin: 0;
+  padding: 15px 17px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, .012);
+}
+.week-empty a { color: #8c1515; }
 .week-no {
   display: inline-flex;
   align-items: center;

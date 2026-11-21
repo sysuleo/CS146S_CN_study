@@ -279,9 +279,9 @@ def build_index(pages):
         groups.setdefault(page["week"], []).append(page)
 
     cards = []
-    for week in sorted(groups):
+    for week in sorted(set(groups) | set(WEEK_TITLES)):
         items = []
-        for page in groups[week]:
+        for page in groups.get(week, []):
             coverage = page.get("coverage", "")
             if "核心" in coverage:
                 status_label, status_class = "部分精修", "status-partial"
@@ -298,13 +298,21 @@ def build_index(pages):
   <span class="card-link">阅读中译 →</span>
 </a>"""
             )
+        if items:
+            body = f'<div class="card-grid">{"".join(items)}</div>'
+        else:
+            body = (
+                '<p class="week-empty">本周课程没有指定阅读材料，内容以课堂讲授为主。'
+                f'<a href="../schedule.html#w{week}">查看本周主题与 Slides →</a></p>'
+            )
         cards.append(
             f"""<section class="week-block">
   <div class="week-head">
     <span class="week-no">W{week}</span>
     <div><h2>{WEEK_ZH.get(week, '')}</h2><p>{WEEK_TITLES.get(week, '')}</p></div>
+    <a class="week-jump" href="../schedule.html#w{week}">课表 / Slides →</a>
   </div>
-  <div class="card-grid">{''.join(items)}</div>
+  {body}
 </section>"""
         )
 
@@ -338,7 +346,7 @@ def build_index(pages):
     <div class="hero-stats">
       <div><strong>{len(pages)}</strong><span>篇中译</span></div>
       <div><strong>{total_min}</strong><span>分钟阅读</span></div>
-      <div><strong>{len(groups)}</strong><span>个主题周</span></div>
+      <div><strong>{len(groups)}/{len(WEEK_TITLES)}</strong><span>周次有阅读</span></div>
     </div>
   </div>
 </header>
