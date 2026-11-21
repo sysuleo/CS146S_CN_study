@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>browse.sh：给 Agent 的浏览器 CLI 与技能目录 · CS146S 学习站</title>
+<meta name="description" content="browse.sh：给 Agent 的浏览器 CLI 与技能目录 的中文精译、学习者总结与延伸练习">
+<link rel="stylesheet" href="assets/study.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">CS146S <span>学习站</span></a>
+    <nav>
+      <a href="../schedule.html">返回课表</a>
+      <a href="index.html">全部导读</a>
+      <a class="original" href="https://browse.sh" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </nav>
+  </div>
+</header>
+<main class="article-shell">
+  <div class="article-layout">
+    <aside class="toc-side">
+      <details open>
+        <summary>本页目录</summary>
+        <nav class="toc-nav">
+<ul><li class="toc-l2"><a href="#_1">总结</a></li><li class="toc-l2"><a href="#_2">原文逐段对照翻译</a><ul><li class="toc-l3"><a href="#_3">它是什么</a></li><li class="toc-l3"><a href="#_4">底层浏览器原语</a></li><li class="toc-l3"><a href="#_5">网站技能目录</a></li><li class="toc-l3"><a href="#_6">网络与控制台观测</a></li><li class="toc-l3"><a href="#_7">本地与云端</a></li><li class="toc-l3"><a href="#_8">技能目录的结构</a></li></ul></li><li class="toc-l2"><a href="#_9">学习者视角</a><ul><li class="toc-l3"><a href="#_10">关键收获</a></li><li class="toc-l3"><a href="#_11">放回课程里看</a></li><li class="toc-l3"><a href="#_12">一个反直觉点</a></li></ul></li><li class="toc-l2"><a href="#_13">拓展</a><ul><li class="toc-l3"><a href="#_14">思考题</a></li><li class="toc-l3"><a href="#_15">练习</a></li><li class="toc-l3"><a href="#_16">接着读</a></li></ul></li></ul>
+        </nav>
+        <a class="toc-top" href="#top">回到顶部 ↑</a>
+      </details>
+    </aside>
+    <article id="top">
+      <div class="breadcrumb"><a href="index.html">学习站</a> / Week 3 · Agent Skills 与 CLI</div>
+    <header class="article-head">
+      <div class="kicker">Week 3 · 产品文档 · 全文精译</div>
+      <h1>browse.sh：给 Agent 的浏览器 CLI 与技能目录</h1>
+      <p class="original-title">原文：<a href="https://browse.sh" target="_blank" rel="noopener noreferrer">browse.sh: The open web catalog / A browser CLI for your AI Agents</a></p>
+      <div class="meta">
+        <span>Browserbase</span>
+        <span>2026</span>
+        <span>约 7 分钟</span>
+      </div>
+    </header>
+    <div class="article-body">
+<h2 id="_1">总结</h2>
+<p>给 AI agent 用的浏览器 CLI：一个命令，统一 skills、浏览器原语、调试和云会话。</p>
+<ul>
+<li>底层浏览器原语：click、scroll、type、hover、press、screenshot。</li>
+<li>网站技能目录：<code>browse skills add &lt;domain&gt;</code>，安装后 agent 知道该网站的选择器和 API。</li>
+<li>可以实时 tail 网络请求和控制台，agent 能看到页面到底做了什么。</li>
+<li>本地用 Chromium；加 <code>cloud</code> 前缀切换到 Browserbase 云会话。</li>
+<li>官方称，预置 DOM 选择器和 XHR 请求可把 token 成本降低 50 倍。</li>
+</ul>
+<h2 id="_2">原文逐段对照翻译</h2>
+<blockquote>
+<p><strong>翻译说明：</strong>以下按原文顺序翻译产品说明、CLI 示例和工作流；站点目录条目为结构化数据，正文中概括展示，完整目录见原文。</p>
+</blockquote>
+<h3 id="_3">它是什么</h3>
+<div class="bilingual-pair">
+<p class="src">The open web catalog. A browser CLI for your AI Agents. One CLI for skills, browser primitives, debugging, and cloud sessions, designed to be driven by AI Agents.</p>
+<p class="dst">一个开放的 Web 目录，也是给 AI agent 用的浏览器 CLI。一个命令统一 skills、浏览器原语、调试和云会话，专为 AI agent 驱动而设计。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Give AI Agents the skills to automate websites from the open web catalog. Suggested DOM selectors and XHR requests cut token costs by 50x.</p>
+<p class="dst">让 agent 使用开放目录里的“网站技能”来自动化网站。预置的 DOM 选择器和 XHR 请求，可以把 token 成本降低 50 倍。</p>
+</div>
+
+<h3 id="_4">底层浏览器原语</h3>
+<div class="bilingual-pair">
+<p class="src">Drive any page with low-level primitives: click, scroll, type, hover, press. Address elements by selector or by the AI Agent's accessibility refs.</p>
+<p class="dst">用底层原语操作任意页面：click、scroll、type、hover、press。元素可以用 CSS selector，也可以用 agent 的可访问性 ref 定位。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">browse click "input#search"; browse type "Apartments in SF"; browse select @8 "Single family unit"; browse press "Enter"; browse mouse scroll 50 50 10 10; browse screenshot.</p>
+<p class="dst">示例命令：`browse click "input#search"`、`browse type "Apartments in SF"`、`browse select @8 "Single family unit"`、`browse press "Enter"`、`browse mouse scroll 50 50 10 10`、`browse screenshot`。</p>
+</div>
+
+<h3 id="_5">网站技能目录</h3>
+<div class="bilingual-pair">
+<p class="src">browse skills add alltrails.com; browse skills add recreation.gov; browse skills add weather.gov; browse skills add plugshare.com; browse skills add ramp.com.</p>
+<p class="dst">用 `browse skills add <domain>` 安装网站技能，例如 AllTrails、Recreation.gov、Weather.gov、PlugShare、Ramp。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Once installed, the skill gives the agent suggested DOM selectors, key XHR/API requests, operation steps, and the shape of returned data. This avoids re-discovering the page structure every session.</p>
+<p class="dst">安装后，skill 会给 agent 提供推荐 DOM 选择器、关键 XHR/API 请求、操作步骤和返回数据结构。这样就不必每次会话都重新摸索页面结构。</p>
+</div>
+
+<h3 id="_6">网络与控制台观测</h3>
+<div class="bilingual-pair">
+<p class="src">Tail the network and console of any browse session in real time. AI Agents (and you) see exactly what the page did: GET /api/listings 200 124 ms; POST /api/filter 200 84 ms; warnings and errors from the console.</p>
+<p class="dst">实时 tail 任意 browse 会话的网络和控制台，agent 和你都能看到页面到底做了什么：`GET /api/listings 200 124 ms`、`POST /api/filter 200 84 ms`，以及控制台的 warning/error。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">This matters because the agent is not just "clicking"; it can verify what request the click triggered and what error the page reported. Observability is part of reliability.</p>
+<p class="dst">这很重要：agent 不只是“点了一下”，还能验证点击触发了什么请求、页面报了什么错。可观测性是可靠性的一部分。</p>
+</div>
+
+<h3 id="_7">本地与云端</h3>
+<div class="bilingual-pair">
+<p class="src">All CLI commands work natively with local Chromium. Switch to remote sessions on Browserbase's Platform by prefixing any command with cloud: browse cloud sessions create; browse cloud search "..."; browse cloud fetch "https://...".</p>
+<p class="dst">所有命令默认在本地 Chromium 上运行。加 `cloud` 前缀即可切换到 Browserbase 云会话：`browse cloud sessions create`、`browse cloud search "..."`、`browse cloud fetch "https://..."`。</p>
+</div>
+
+<h3 id="_8">技能目录的结构</h3>
+<div class="bilingual-pair">
+<p class="src">Catalog entries usually include domain, skill name, method (api / browser / fetch / hybrid / cli), region, and a capability description. Examples: Ticketmaster find-ticket API, FlightAware track-flight fetch, Glassdoor get-company-reviews browser, Amazon search-products browser, Airbnb search-listings browser, 12306 find-trains hybrid.</p>
+<p class="dst">目录条目通常包括：域名、技能名、方法（api / browser / fetch / hybrid / cli）、地区、能力描述。例如 Ticketmaster 查票、FlightAware 查航班、Glassdoor 查公司评论、Amazon 搜商品、Airbnb 搜房源、12306 查火车。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">This is not a generic browser agent; it is a library of skills accumulated per website. The agent does not need to guess the site structure every time.</p>
+<p class="dst">这不是通用浏览器 agent，而是按网站沉淀的技能库。agent 不需要每次猜网站结构。</p>
+</div>
+
+<h2 id="_9">学习者视角</h2>
+<h3 id="_10">关键收获</h3>
+<ol>
+<li><strong>浏览器 agent 的瓶颈是“网站知识”，不是点击能力。</strong> 知道该调哪个 API、该选哪个 DOM，比会点击重要得多。</li>
+<li><strong>技能目录是 context engineering。</strong> 预置选择器和 XHR，把“探索成本”从每次会话转移到一次安装。</li>
+<li><strong>观测能力是可靠性的前提。</strong> 网络和控制台 tail 让 agent 能验证动作。</li>
+<li><strong>本地/云端切换是部署灵活性。</strong> 同一套命令，既能本地跑，也能云端并行。</li>
+<li><strong>网站技能会腐烂。</strong> 网站改版、API 变更、反爬升级，都需要维护。</li>
+</ol>
+<h3 id="_11">放回课程里看</h3>
+<p>browse.sh 是 Week 3 “Agent Skills and CLI” 的产品化案例：CLI 原语 + 网站技能 + 观测。它和 <a href="w3-pstack.html">pstack</a> 的区别是：pstack 管工程流程，browse.sh 管网页操作。</p>
+<h3 id="_12">一个反直觉点</h3>
+<p>很多人以为浏览器 agent 的关键是“更聪明的视觉模型”。browse.sh 的答案是：<strong>预置网站知识，减少模型需要看和猜的东西。</strong></p>
+<h2 id="_13">拓展</h2>
+<h3 id="_14">思考题</h3>
+<ol>
+<li>什么情况下应该用 API 技能，什么情况下必须用浏览器技能？</li>
+<li>网站技能腐烂后，如何自动发现并修复？</li>
+<li>让 agent 直接调用网站内部 API，可能带来哪些合规和稳定性风险？</li>
+<li>如果目标网站有反爬，browse.sh 的方案会如何失效？</li>
+</ol>
+<h3 id="_15">练习</h3>
+<p>选一个你常用的网站，写一份最小“网站技能”：</p>
+<ul>
+<li>目标 URL；</li>
+<li>3 个关键选择器；</li>
+<li>1 个关键 XHR 请求；</li>
+<li>成功/失败的判断条件；</li>
+<li>一次完整的操作脚本。</li>
+</ul>
+<h3 id="_16">接着读</h3>
+<ul>
+<li><a href="w3-pstack.html">pstack：工程 playbook 与模型分工</a></li>
+<li><a href="w3-matt-pocock-s-skills.html">Matt Pocock's Skills：小型可组合技能</a></li>
+<li><a href="w2-enterprise-mcp-cloudflare.html">Enterprise MCP：企业级工具治理</a></li>
+</ul>
+    </div>
+    <div class="article-foot">
+      <div class="notice">
+        <strong>阅读说明：</strong>产品说明、CLI 用法与示例逐段翻译；站点目录条目未逐条翻译。
+      </div>
+      <div class="pager">
+        <a class="prev" href="w3-matt-pocock-s-skills.html">← Matt Pocock 的 Skills：用工程基本功对抗 Vibe Coding</a>
+        <a class="next" href="w4-i-still-prefer-mcp-over-skills.html">我还是更 prefer MCP，而不是 Skills →</a>
+      </div>
+      </div>
+    </article>
+  </div>
+</main>
+<footer class="site-foot">
+  <p>CS146S: The Modern Software Developer · Fall 2026 · 中文学习站</p>
+  <p><a href="../schedule.html">回到课程表</a></p>
+</footer>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const max = h.scrollHeight - h.clientHeight;
+  bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+}, { passive: true });
+
+const tocLinks = [...document.querySelectorAll('.toc-nav a')];
+const tocDetails = document.querySelector('.toc-side details');
+if (tocDetails && window.matchMedia('(max-width: 1080px)').matches) {
+  tocDetails.removeAttribute('open');
+}
+const tocTargets = tocLinks
+  .map((link) => document.getElementById(link.getAttribute('href').slice(1)))
+  .filter(Boolean);
+if ('IntersectionObserver' in window && tocTargets.length) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      tocLinks.forEach((link) => link.classList.remove('active'));
+      const active = tocLinks.find((link) => link.getAttribute('href') === '#' + entry.target.id);
+      if (active) active.classList.add('active');
+    });
+  }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+  tocTargets.forEach((target) => observer.observe(target));
+}
+</script>
+</body>
+</html>

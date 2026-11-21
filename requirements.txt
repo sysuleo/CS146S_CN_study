@@ -1,0 +1,6 @@
+fastapi>=0.135
+uvicorn>=0.44
+markdown>=3.8
+requests>=2.32
+trafilatura>=2.0
+pymupdf>=1.26

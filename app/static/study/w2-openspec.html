@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenSpec：用轻量规格把“做对的事”和“把事做对”分开 · CS146S 学习站</title>
+<meta name="description" content="OpenSpec：用轻量规格把“做对的事”和“把事做对”分开 的中文精译、学习者总结与延伸练习">
+<link rel="stylesheet" href="assets/study.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">CS146S <span>学习站</span></a>
+    <nav>
+      <a href="../schedule.html">返回课表</a>
+      <a href="index.html">全部导读</a>
+      <a class="original" href="https://openspec.dev" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </nav>
+  </div>
+</header>
+<main class="article-shell">
+  <div class="article-layout">
+    <aside class="toc-side">
+      <details open>
+        <summary>本页目录</summary>
+        <nav class="toc-nav">
+<ul><li class="toc-l2"><a href="#_1">总结</a></li><li class="toc-l2"><a href="#_2">原文逐段对照翻译</a></li><li class="toc-l2"><a href="#_3">学习者视角</a><ul><li class="toc-l3"><a href="#_4">关键收获</a></li><li class="toc-l3"><a href="#_5">放回课程里看</a></li><li class="toc-l3"><a href="#_6">一个反直觉点</a></li></ul></li><li class="toc-l2"><a href="#_7">拓展</a><ul><li class="toc-l3"><a href="#_8">思考题</a></li><li class="toc-l3"><a href="#_9">练习</a></li><li class="toc-l3"><a href="#_10">接着读</a></li></ul></li></ul>
+        </nav>
+        <a class="toc-top" href="#top">回到顶部 ↑</a>
+      </details>
+    </aside>
+    <article id="top">
+      <div class="breadcrumb"><a href="index.html">学习站</a> / Week 2 · 高级上下文工程</div>
+    <header class="article-head">
+      <div class="kicker">Week 2 · 产品文档 · 全文精译</div>
+      <h1>OpenSpec：用轻量规格把“做对的事”和“把事做对”分开</h1>
+      <p class="original-title">原文：<a href="https://openspec.dev" target="_blank" rel="noopener noreferrer">OpenSpec: The spec framework for building the right thing and building it right</a></p>
+      <div class="meta">
+        <span>OpenSpec</span>
+        <span>2026</span>
+        <span>约 5 分钟</span>
+      </div>
+    </header>
+    <div class="article-body">
+<h2 id="_1">总结</h2>
+<p>OpenSpec 想解决的不是“代码怎么写”，而是<strong>在写代码之前和之后，如何让所有人对“要做什么”拥有同一个版本的事实</strong>。</p>
+<ul>
+<li>规格不是一次性文档，而是团队和 coding agent 共同维护的当前共识。</li>
+<li>工作流有五步：探索问题、提出变更、实现、验证、归档。</li>
+<li>它强调两件事：先确认要做的东西是对的，再确认实现和规格一致。</li>
+<li>规格层与具体 agent 解耦：今天用 Claude Code，明天换 Codex，规格仍然有效。</li>
+</ul>
+<h2 id="_2">原文逐段对照翻译</h2>
+<blockquote>
+<p><strong>翻译说明：</strong>原文为产品说明页，以下按原文顺序逐段翻译；兼容性清单过长，正文中概括为“支持主流 agent/IDE”，完整名单保留在原文。</p>
+</blockquote>
+<div class="bilingual-pair">
+<p class="src">The spec framework for building the right thing and building it right</p>
+<p class="dst">一个用来“做对的事、并把事做对”的规格框架</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Synopsis: OpenSpec is a lightweight and configurable framework for creating and managing software specifications.</p>
+<p class="dst">概要：OpenSpec 是一个轻量、可配置的框架，用于创建和管理软件规格。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">With OpenSpec, you capture what you want to build in a spec and keep your team and coding agents aligned as the work evolves. We help you refine the requirements, validate that they describe the right thing, and verify that the implementation matches.</p>
+<p class="dst">使用 OpenSpec，你可以把“想构建什么”写进规格，并在工作推进过程中让团队和 coding agent 始终对齐。它帮助你细化需求，确认需求描述的是正确的东西，并验证实现是否与规格一致。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">In essence, OpenSpec helps you build the right thing and build it right.</p>
+<p class="dst">本质上，OpenSpec 帮你做到两件事：构建正确的东西，并把它正确地构建出来。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Installation: OpenSpec can be installed and used with a wide range of coding agents and IDEs, including Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI, OpenCode, and many more.</p>
+<p class="dst">安装：OpenSpec 支持大量 coding agent 和 IDE，包括 Claude Code、Codex、Cursor、GitHub Copilot、Gemini CLI、OpenCode 等；完整兼容列表见原文。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Workflow: /opsx:explore maps the problem and helps you understand the codebase. /opsx:propose drafts proposal.md, specs/, design.md, and tasks.md. /opsx:apply implements tasks from the specification. /opsx:verify checks that the implementation matches the spec. /opsx:archive archives completed changes.</p>
+<p class="dst">工作流：`/opsx:explore` 梳理问题、理解代码库；`/opsx:propose` 起草 proposal.md、specs/、design.md、tasks.md；`/opsx:apply` 按规格实现任务；`/opsx:verify` 检查实现是否符合规格；`/opsx:archive` 归档已完成的变更。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Each step leaves an inspectable artifact: a proposal for why, specs for what, design for how, tasks for the execution plan, and verification for how correctness is proven.</p>
+<p class="dst">每一步都会留下可检查的产物：proposal 说明“为什么做”，specs 说明“做成什么样”，design 说明“怎么做”，tasks 说明“分几步做”，verify 说明“怎么证明做对了”。</p>
+</div>
+
+<h2 id="_3">学习者视角</h2>
+<h3 id="_4">关键收获</h3>
+<ol>
+<li><strong>规格是共识，不是文档负担。</strong> 它的价值在于让团队和 agent 对“当前要做什么”有同一份事实。</li>
+<li><strong>验证是双向的。</strong> 既要验证实现符合规格，也要在更早的阶段验证规格本身描述的是正确的东西。</li>
+<li><strong>归档让规格库保持新鲜。</strong> 完成的变更要从“进行中”变成“历史”，否则规格会腐烂。</li>
+<li><strong>规格层应该与 agent 解耦。</strong> 工具会换，规格和变更记录应该留下。</li>
+</ol>
+<h3 id="_5">放回课程里看</h3>
+<p>OpenSpec 是 Week 2 “spec-driven development” 的一个具体实现。它和 <a href="w2-superpowers.html">Superpowers</a> 是两种风格：Superpowers 把方法写成自动触发的 skills，OpenSpec 把方法写成显式的规格工作流。</p>
+<h3 id="_6">一个反直觉点</h3>
+<p>很多人认为规格会拖慢 agent。OpenSpec 的假设相反：<strong>没有规格，agent 只会更快地做错事，返工更慢。</strong></p>
+<h2 id="_7">拓展</h2>
+<h3 id="_8">思考题</h3>
+<ol>
+<li>你的项目里，哪些变更值得写规格，哪些不值得？判断标准是什么？</li>
+<li>如果 agent 实现了规格，但规格本身是错的，谁来负责？</li>
+<li><code>verify</code> 应该由人做、agent 做，还是两者都做？</li>
+</ol>
+<h3 id="_9">练习</h3>
+<p>选一个最近做过的小功能，补一份 OpenSpec 风格的变更包：</p>
+<ul>
+<li><code>proposal.md</code>：为什么做；</li>
+<li><code>specs/</code>：行为规格；</li>
+<li><code>design.md</code>：关键设计取舍；</li>
+<li><code>tasks.md</code>：可执行任务；</li>
+<li>一条 verify 清单。</li>
+</ul>
+<h3 id="_10">接着读</h3>
+<ul>
+<li><a href="w2-superpowers.html">Superpowers：用 skills 强制执行开发方法</a></li>
+<li><a href="w3-matt-pocock-s-skills.html">Matt Pocock's Skills：用 grill 和共享语言对齐需求</a></li>
+<li><a href="w4-agents-md-factory-docs.html">AGENTS.md：给 agent 的项目简报</a></li>
+</ul>
+    </div>
+    <div class="article-foot">
+      <div class="notice">
+        <strong>阅读说明：</strong>本页按原文顺序精译，合并了重复表述；所有关键论点、数据和结论均来自原文。
+      </div>
+      <div class="pager">
+        <a class="prev" href="w2-the-context-tax-when-to-compact.html">← 上下文税：什么时候该压缩你的 Coding Agent</a>
+        <a class="next" href="w2-superpowers.html">Superpowers：把一套开发方法写成 Agent 的 Skills →</a>
+      </div>
+      </div>
+    </article>
+  </div>
+</main>
+<footer class="site-foot">
+  <p>CS146S: The Modern Software Developer · Fall 2026 · 中文学习站</p>
+  <p><a href="../schedule.html">回到课程表</a></p>
+</footer>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const max = h.scrollHeight - h.clientHeight;
+  bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+}, { passive: true });
+
+const tocLinks = [...document.querySelectorAll('.toc-nav a')];
+const tocDetails = document.querySelector('.toc-side details');
+if (tocDetails && window.matchMedia('(max-width: 1080px)').matches) {
+  tocDetails.removeAttribute('open');
+}
+const tocTargets = tocLinks
+  .map((link) => document.getElementById(link.getAttribute('href').slice(1)))
+  .filter(Boolean);
+if ('IntersectionObserver' in window && tocTargets.length) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      tocLinks.forEach((link) => link.classList.remove('active'));
+      const active = tocLinks.find((link) => link.getAttribute('href') === '#' + entry.target.id);
+      if (active) active.classList.add('active');
+    });
+  }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+  tocTargets.forEach((target) => observer.observe(target));
+}
+</script>
+</body>
+</html>

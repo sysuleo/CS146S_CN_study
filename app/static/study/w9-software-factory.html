@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Factory：10 天、688 个 PR、零人类手写代码的实验 · CS146S 学习站</title>
+<meta name="description" content="Software Factory：10 天、688 个 PR、零人类手写代码的实验 的中文精译、学习者总结与延伸练习">
+<link rel="stylesheet" href="assets/study.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">CS146S <span>学习站</span></a>
+    <nav>
+      <a href="../schedule.html">返回课表</a>
+      <a href="index.html">全部导读</a>
+      <a class="original" href="https://software-factory.dev" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </nav>
+  </div>
+</header>
+<main class="article-shell">
+  <div class="article-layout">
+    <aside class="toc-side">
+      <details open>
+        <summary>本页目录</summary>
+        <nav class="toc-nav">
+<ul><li class="toc-l2"><a href="#_1">总结</a></li><li class="toc-l2"><a href="#_2">原文逐段对照翻译</a><ul><li class="toc-l3"><a href="#_3">页面概览</a></li><li class="toc-l3"><a href="#sdlc">自主 SDLC</a></li><li class="toc-l3"><a href="#_4">往期直播</a></li><li class="toc-l3"><a href="#_5">直播排期</a></li><li class="toc-l3"><a href="#_6">关注</a></li></ul></li><li class="toc-l2"><a href="#_7">学习者视角</a><ul><li class="toc-l3"><a href="#_8">关键收获</a></li><li class="toc-l3"><a href="#_9">放回课程里看</a></li><li class="toc-l3"><a href="#_10">一个反直觉点</a></li></ul></li><li class="toc-l2"><a href="#_11">拓展</a><ul><li class="toc-l3"><a href="#_12">思考题</a></li><li class="toc-l3"><a href="#_13">练习</a></li><li class="toc-l3"><a href="#_14">接着读</a></li></ul></li></ul>
+        </nav>
+        <a class="toc-top" href="#top">回到顶部 ↑</a>
+      </details>
+    </aside>
+    <article id="top">
+      <div class="breadcrumb"><a href="index.html">学习站</a> / Week 9 · 软件工厂</div>
+    <header class="article-head">
+      <div class="kicker">Week 9 · 产品实验记录 · 全文精译</div>
+      <h1>Software Factory：10 天、688 个 PR、零人类手写代码的实验</h1>
+      <p class="original-title">原文：<a href="https://software-factory.dev" target="_blank" rel="noopener noreferrer">Software Factory — A self-driving codebase that ships continuously</a></p>
+      <div class="meta">
+        <span>Ona / Software Factory</span>
+        <span>2026</span>
+        <span>约 9 分钟</span>
+      </div>
+    </header>
+    <div class="article-body">
+<h2 id="_1">总结</h2>
+<p>这不是一篇产品介绍，而是一份<strong>公开的软件工厂实验日志</strong>：Ona 用 10 天时间，让 AI agents 从空仓库开始构建一个真实产品 Memo。</p>
+<ul>
+<li>目标不是写 demo，而是验证“零人类手写代码”能否持续交付。</li>
+<li>工厂不是单个 agent，而是 14–16 个 automations 串成的 SDLC：规划、实现、修 bug、review、验证、事故响应。</li>
+<li>早期瓶颈是“能不能写出来”，后期瓶颈变成 <strong>spec 质量、反馈闭环和 taste</strong>。</li>
+<li>工厂能自动修运行时 bug，但视觉和交互问题仍然需要人来指出。</li>
+<li>最后一天的数据：375 个 PR、5 万+ 行代码、1,067 个测试、87% 自动化率、PR 合并中位数 4.9 分钟。</li>
+<li>页面顶部的 688 PR / 77,424 行是持续运行的实时统计，和最终直播时的快照不同。</li>
+</ul>
+<h2 id="_2">原文逐段对照翻译</h2>
+<blockquote>
+<p><strong>翻译说明：</strong>原文是 Software Factory 的实验直播归档页。以下按页面顺序翻译实时统计、产品说明和 10 期直播记录；<code>Streaming Schedule</code> 在原文是动态组件，抓取时没有固定条目，本页保留标题并注明。页面顶部的 PR / Commit / Feature 等滚动标签为装饰文字，不逐项翻译。</p>
+</blockquote>
+<h3 id="_3">页面概览</h3>
+<div class="bilingual-pair">
+<p class="src">Software Factory. A self-driving codebase that ships continuously — built in the open, entirely by AI agents. Humans steer intent. Agents execute.</p>
+<p class="dst">Software Factory：一个持续交付的、自驱动代码库。它在公开环境中构建，完全由 AI agents 完成。人类负责掌舵意图，agents 负责执行。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">688 PRs merged, 88% autonomous, 77,424 lines of code, 100% CI green.</p>
+<p class="dst">688 个 PR 已合并，88% 由 agent 自主完成，77,424 行代码，CI 100% 通过。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Try Memo — the product we're building · Source on GitHub · More in numbers.</p>
+<p class="dst">试用 Memo——我们正在构建的产品 · 源码在 GitHub · 更多数据。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Discover background agents.</p>
+<p class="dst">探索后台 agents。</p>
+</div>
+
+<h3 id="sdlc">自主 SDLC</h3>
+<div class="bilingual-pair">
+<p class="src">The autonomous SDLC. Open full diagram.</p>
+<p class="dst">自主 SDLC。可以打开完整图查看 factory 从规划、spec 到实现、review、验证和 operations 的各个阶段。</p>
+</div>
+
+<p><strong>阅读说明：</strong>原文 SDLC 图是交互式组件，未能下载到本地；完整图请回原文查看。</p>
+
+<h3 id="_4">往期直播</h3>
+<div class="bilingual-pair">
+<p class="src">01 Mon Apr 13 — Kickoff — Setting the stage. Introduced the concept: building a real product with zero human-written code. Covered ground rules, the stack (Next.js, Supabase, Sentry, Vercel), harness engineering, and the SDLC stages agents will handle. Showed the empty repo and the Ona interface. No code written — that starts tomorrow.</p>
+<p class="dst">01 4 月 13 日周一——启动：搭好舞台。介绍了核心概念：用零人类手写代码构建一个真实产品。讨论了基本规则、技术栈（Next.js、Supabase、Sentry、Vercel）、harness engineering，以及 agents 将负责的 SDLC 阶段。展示了空仓库和 Ona 界面。当天没有写代码——从第二天开始。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">02 Tue Apr 14 — First scaffold, first automation. Walked through the initial Next.js 16 scaffold with Supabase auth, Sentry monitoring, and a testing framework. Introduced the product: Memo, a Notion-style note-taking app. Showed the AGENTS.md approach and the PR Reviewer automation running live. Laid out the full automation roadmap. Page live at memo.software-factory.dev.</p>
+<p class="dst">02 4 月 14 日周二——第一个脚手架，第一个 automation。走查了初始的 Next.js 16 脚手架，包含 Supabase auth、Sentry 监控和测试框架。介绍了产品 Memo：一个 Notion 风格的笔记应用。展示了 AGENTS.md 方法和正在运行的 PR Reviewer automation，并列出完整的 automation 路线图。页面已上线：memo.software-factory.dev。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">03 Wed Apr 15 — 50 PRs, zero human code. Ona CTO Chris Weichel joined as co-host. Walked through plan mode turning a basic brief into a detailed product spec, and the Feature Planner automation breaking that spec into sequential GitHub issues. By stream time, agents had autonomously closed 50 PRs and shipped the full initial feature set: auth, workspaces, pages, Lexical editor, full-text search, markdown import/export, and member invites. Introduced the two-loop automation pattern and progressive risk escalation. Empty shell to functional product in under a day.</p>
+<p class="dst">03 4 月 15 日周三——50 个 PR，零人类代码。Ona CTO Chris Weichel 作为联合主持人加入。走查了 plan mode 如何把一份简单 brief 变成详细产品 spec，以及 Feature Planner automation 如何把 spec 拆成按顺序执行的 GitHub issues。到直播时，agents 已经自主关闭 50 个 PR，交付了完整的初始功能集：auth、workspaces、pages、Lexical editor、全文搜索、markdown 导入/导出和成员邀请。介绍了 two-loop automation pattern 和渐进式风险升级。不到一天，从空壳变成可用产品。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">04 Thu Apr 16 — Under the hood — how agents review each other's code. Opened the automations dashboard and walked through the full stack: Feature Planner, Feature Builder, Bug Fixer, PR Reviewer, PR Shepherd, Verifiers, Incident Responder, and more — 14 automations chaining together from idea to shipped code. Showed a real PR where agents wrote, reviewed, and resolved comments without human input. Discussed what's still manual and what's fully autonomous. Lou introduced the 'in the loop to on the loop' framing and shared how Ona handles compliant auto-approvals at scale.</p>
+<p class="dst">04 4 月 16 日周四——底层机制：agents 如何互相 review 代码。打开 automations dashboard，走查完整链路：Feature Planner、Feature Builder、Bug Fixer、PR Reviewer、PR Shepherd、Verifiers、Incident Responder 等，14 个 automations 从想法一路串到已交付代码。展示了一个真实 PR：agents 在没有人类输入的情况下完成编写、review 和评论处理。讨论了哪些环节仍然手动、哪些已经全自动。Lou 介绍了“in the loop to on the loop”的框架，并分享了 Ona 如何规模化处理合规的自动批准。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">05 Fri Apr 17 — What the factory catches (and what it misses). Ona's COO filed 12 bugs after stress-testing the app. The factory had been fixing bugs too — just not the same ones. Walked through the two worlds: Sentry catching runtime errors autonomously, while visual and interaction bugs need a human to point out. Showed the quality.md self-improvement loop, filed two bugs live on stream, and checked back at the end.</p>
+<p class="dst">05 4 月 17 日周五——factory 能抓到什么，又会漏掉什么。Ona 的 COO 在压测应用后提交了 12 个 bug。factory 其实也一直在修 bug——只是修的不是同一批。走查了两个世界：Sentry 能自主捕获运行时错误，而视觉和交互 bug 需要人类指出来。展示了 <code>quality.md</code> 自改进循环，在直播中现场提交了两个 bug，并在结尾回看处理结果。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">06 Mon Apr 20 — It looks like a Notion clone. Ona's Field Marketing Lead joined as co-host and gave her honest first impression: "it looks like a Notion clone." Walked through the gap between AI-generated design and human-crafted design — AI reverts to generic patterns unless you push hard with rules and systems. Showed a Storybook design system built in the hour before the stream, moving from text-based specs to visual component guidance. Tried fixing contrast issues live with Claude Design — it improved the ratio but made everything look the same. Introduced the Week 2 plan: iterate on Storybook to give the factory taste, with humans directing design and agents implementing.</p>
+<p class="dst">06 4 月 20 日周一——它看起来像 Notion 克隆。Ona 的 Field Marketing Lead 作为联合主持人加入，并给出诚实的第一印象：“它看起来像一个 Notion 克隆。”讨论了 AI 生成设计和人类设计之间的差距：除非用规则和系统强力推动，否则 AI 会退回通用模板。展示了在直播前一小时搭出的 Storybook 设计系统，从文本 spec 转向可视化组件指导。现场尝试用 Claude Design 修对比度问题——对比度提高了，但所有东西看起来都一样。介绍了第二周计划：迭代 Storybook，让 factory 形成 taste，人类负责指导设计，agents 负责实现。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">07 Tue Apr 21 — Faster than you can steer it. The factory ships faster than you can steer it. Explored the last manual step in the SDLC: operations back to planning. Discussed three layers of human input into a software factory: spec quality, feedback loops, and taste. Built a user feedback tool live during the stream to close the loop. Chris Weichel on the tension between speed and differentiation: "It's never been easier to feature bloat, and it's never been harder to differentiate."</p>
+<p class="dst">07 4 月 21 日周二——比你掌舵的速度还快。factory 的交付速度已经快过人类引导它的速度。探讨了 SDLC 里最后一个手动环节：从 operations 回到 planning。讨论了人类输入软件工厂的三层：spec 质量、反馈闭环和 taste。直播中现场构建了一个用户反馈工具来闭合反馈环。Chris Weichel 谈到速度与差异化的张力：“功能膨胀从未如此容易，差异化从未如此困难。”</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">08 Wed Apr 22 — What you choose not to build. Ona's Head of Product Matt Boyle joined to discuss how product management changes when the factory builds faster than you can steer. Reviewed a database feature built overnight from a 10-minute spec. Discussed the dopamine trap of prompting vs planning, why AI should raise the quality bar not lower it, and Ona's internal experimentation framework: ship fast, demo internally, two weeks to production or roll back. The question isn't what you can build. It's what you choose not to.</p>
+<p class="dst">08 4 月 22 日周三——你选择不构建什么。Ona 的 Head of Product Matt Boyle 加入，讨论当 factory 构建得比人类引导还快时，产品管理会发生什么变化。回顾了一个数据库功能：从 10 分钟 spec 出发，一夜之间构建完成。讨论了 prompting 与 planning 的多巴胺陷阱、为什么 AI 应该提高而不是降低质量门槛，以及 Ona 的内部实验框架：快速交付、内部 demo、两周内上生产或回滚。问题不是你能构建什么，而是你选择不构建什么。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">09 Thu Apr 23 — Platform or ground up? AWS Solutions Architect Shardul Vaidya joined from the London office alongside Lou to compare two real software factory architectures side by side. Shardul built his from scratch in 72 hours: a Rust state machine with adversarial agent review, dependency graph orchestration, and a nightly overseer that spots inefficiencies across all agent conversations. Compared approaches to planning, review, self-improvement, and governance. Lou drew the Kubernetes parallel: everyone's building their own factory right now, but standardization is coming.</p>
+<p class="dst">09 4 月 23 日周四——平台还是从零自建？AWS Solutions Architect Shardul Vaidya 从伦敦办公室加入，与 Lou 一起并排比较两套真实的 software factory 架构。Shardul 用 72 小时从零构建：一个 Rust 状态机，带对抗式 agent review、依赖图编排，以及每晚扫描所有 agent 对话、发现低效环节的 overseer。比较了规划、review、自我改进和治理上的不同做法。Lou 拿 Kubernetes 作类比：现在每个人都在造自己的 factory，但标准化迟早会到来。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">10 Fri Apr 24 — How we went from 0 to factory. The finale. Lou and Zach walked through the full project dashboard and SDLC map: 375 PRs merged, 50k+ lines of code, 16 automations, 1,067 tests, 87% autonomous rate, median PR-to-merge of 4.9 minutes. Showed the live app, traced the inflection points across 10 days, and reflected on what changed: "You don't build Memo, you build a factory to build Memo." Biggest learning: spec quality determines output quality, and the operations side of the factory needed more automations than the build side. The factory keeps running.</p>
+<p class="dst">10 4 月 24 日周五——我们如何从 0 走到 factory。最终回。Lou 和 Zach 走查了完整项目 dashboard 和 SDLC 图：375 个 PR 已合并、5 万+ 行代码、16 个 automations、1,067 个测试、87% 自动化率、PR 合并中位数 4.9 分钟。展示了线上应用，梳理 10 天里的拐点，并回顾发生了什么变化：“你不是在构建 Memo，你是在构建一个构建 Memo 的 factory。”最大的收获：spec 质量决定产出质量；factory 的 operations 侧需要的 automations 比 build 侧更多。factory 仍在继续运行。</p>
+</div>
+
+<h3 id="_5">直播排期</h3>
+<blockquote>
+<p>说明：直播排期在原文是动态组件，抓取时没有固定条目，因此这里只保留标题。</p>
+</blockquote>
+<h3 id="_6">关注</h3>
+<div class="bilingual-pair">
+<p class="src">Follow along: YouTube @ona_hq @swfactory_dev. Built with Ona. Privacy policy.</p>
+<p class="dst">关注：YouTube @ona_hq、@swfactory_dev。由 Ona 构建。隐私政策。</p>
+</div>
+
+<h2 id="_7">学习者视角</h2>
+<h3 id="_8">关键收获</h3>
+<ol>
+<li><strong>软件工厂的瓶颈会迁移。</strong> 第一天担心“能不能写出来”，第十天担心“spec 够不够好、人类能不能及时给反馈”。</li>
+<li><strong>Automation 是流水线的基本单位。</strong> 14–16 个 automations 把规划、实现、review、验证、事故响应串起来，而不是一个大 agent 包办。</li>
+<li><strong>运行时 bug 和体验 bug 是两类问题。</strong> Sentry 能自动抓前者；视觉、交互和 taste 仍然需要人指出。</li>
+<li><strong>质量门槛不能降。</strong> AI 让功能膨胀更容易，但“选择不做什么”反而更重要。</li>
+<li><strong>Operations 侧被低估。</strong> 最终复盘发现，工厂的 operations 侧比 build 侧需要更多 automations。</li>
+</ol>
+<h3 id="_9">放回课程里看</h3>
+<p>这篇是 Week 9 的总览：它把 Week 8 的 background agents、Week 6 的 review agents、Week 5 的 agent-ready codebase 和 Week 4 的 AGENTS.md 放进一个真实产品周期里。和 <a href="w9-warp-factory-issue-to-pr.html">Warp Factory 示例</a> 对比，Ona 更强调“公开实验和人类 steering”；Warp 更强调“可复制的 factory 配置”。</p>
+<h3 id="_10">一个反直觉点</h3>
+<p>很多人以为 AI 工厂的难点是生成代码。这个实验的结论相反：<strong>代码生成已经足够快，真正稀缺的是高质量 spec、及时反馈和 taste。</strong> 工厂越强，人的判断越重要。</p>
+<h2 id="_11">拓展</h2>
+<h3 id="_12">思考题</h3>
+<ol>
+<li>如果你的团队也跑 10 天软件工厂，最可能在第几天遇到“steering 跟不上”的问题？</li>
+<li>哪些 bug 应该由 Sentry 自动修，哪些必须由人指出？边界怎么划？</li>
+<li>“两周内上生产或回滚”适合你的团队吗？如果不适合，替代规则是什么？</li>
+<li>为什么 operations 侧需要的 automations 比 build 侧更多？</li>
+</ol>
+<h3 id="_13">练习</h3>
+<p>为一个真实产品设计 10 天软件工厂实验：</p>
+<ul>
+<li>第 1 天结束时必须有什么（空仓库、规则、技术栈、dashboard）；</li>
+<li>需要哪些 automations（规划、实现、review、验证、事故响应）；</li>
+<li>哪些指标每天记录（PR 数、CI 通过率、自动化率、合并时长）；</li>
+<li>人类每天必须做的三个判断；</li>
+<li>第 10 天复盘时，用什么证据判断“工厂是否真的在持续交付”。</li>
+</ul>
+<h3 id="_14">接着读</h3>
+<ul>
+<li><a href="w9-warp-factory-issue-to-pr.html">Warp Factory 示例：从 Issue 到 PR</a></li>
+<li><a href="w9-warpbench.html">WarpBench：用内部 benchmark 优化工厂</a></li>
+<li><a href="w9-openinspect-background-agents.html">OpenInspect：开源的后台 agent 框架</a></li>
+</ul>
+    </div>
+    <div class="article-foot">
+      <div class="notice">
+        <strong>阅读说明：</strong>本页按原文顺序精译，合并了重复表述；所有关键论点、数据和结论均来自原文。
+      </div>
+      <div class="pager">
+        <a class="prev" href="w9-warp-factory-issue-to-pr.html">← Warp Factory 示例：从 Issue 到 Pull Request 的完整工程流水线</a>
+        <a class="next" href="w9-openinspect-background-agents.html">Background Agents：让整个团队都能把想法变成 PR →</a>
+      </div>
+      </div>
+    </article>
+  </div>
+</main>
+<footer class="site-foot">
+  <p>CS146S: The Modern Software Developer · Fall 2026 · 中文学习站</p>
+  <p><a href="../schedule.html">回到课程表</a></p>
+</footer>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const max = h.scrollHeight - h.clientHeight;
+  bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+}, { passive: true });
+
+const tocLinks = [...document.querySelectorAll('.toc-nav a')];
+const tocDetails = document.querySelector('.toc-side details');
+if (tocDetails && window.matchMedia('(max-width: 1080px)').matches) {
+  tocDetails.removeAttribute('open');
+}
+const tocTargets = tocLinks
+  .map((link) => document.getElementById(link.getAttribute('href').slice(1)))
+  .filter(Boolean);
+if ('IntersectionObserver' in window && tocTargets.length) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      tocLinks.forEach((link) => link.classList.remove('active'));
+      const active = tocLinks.find((link) => link.getAttribute('href') === '#' + entry.target.id);
+      if (active) active.classList.add('active');
+    });
+  }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+  tocTargets.forEach((target) => observer.observe(target));
+}
+</script>
+</body>
+</html>

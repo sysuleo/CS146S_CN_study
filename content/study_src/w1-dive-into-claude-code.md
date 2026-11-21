@@ -1,0 +1,2014 @@
+---
+title: "深入 Claude Code：生产级 Agent 的设计空间"
+original: "Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems"
+week: "1"
+slug: "w1-dive-into-claude-code"
+source_url: "https://arxiv.org/pdf/2604.14228"
+author: "Jiacheng Liu, Xiaohan Zhao, Xinyi Shang, Zhiqiang Shen"
+date: "2026-10"
+kind: "论文"
+coverage: "全文精译（章节级）"
+minutes: "45"
+blurb: "基于 51 万行 TypeScript 源码，拆解 Claude Code 的 while-loop、权限、压缩、扩展、subagent 与会话持久化。"
+---
+
+## 总结
+
+- 核心 agent loop 极其简单：调用模型 → 执行工具 → 把结果放回上下文 → 重复。
+- 真正复杂的部分是 loop 周围的系统：权限、上下文压缩、工具路由、扩展机制、subagent、会话持久化。
+- 论文提炼出五个价值：人的决策权、安全与隐私、可靠执行、能力放大、上下文适应性。
+- Claude Code 的权限系统是 deny-first，有 7 种模式，并用 ML 分类器判断 auto 模式下的风险。
+- 上下文管理是五层压缩管线；扩展机制有四类：MCP、plugins、skills、hooks。
+- Subagent 的关键不是“多一个模型”，而是隔离上下文，只把最终结果返回主会话。
+- 论文最后提出六个开放方向：可观测性、跨会话记忆、harness 边界、长时程扩展、治理、长期开发者能力。
+
+## 原文逐段对照翻译
+
+> **说明：**论文共 54 页，本页采用章节级精译，覆盖全部 14 个章节；逐段机翻保留在下方“机器翻译参考”中，方便核对细节。
+
+### 研究问题与方法
+
+<div class="bilingual-pair">
+<p class="src">Claude Code is an agentic coding tool that can run shell commands, edit files, and call external services on behalf of the user. This study describes its comprehensive architecture by analyzing the publicly available TypeScript source code and further comparing it with two independent open-source AI agent systems, OpenClaw and Hermes Agent.</p>
+<p class="dst">Claude Code 是一个 agentic coding 工具：它能代替用户执行 shell 命令、编辑文件、调用外部服务。这篇论文通过分析公开的 TypeScript 源码，并与 OpenClaw、Hermes Agent 两个独立开源 agent 系统对比，来描述它的完整架构。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Our analysis identifies five human values, philosophies, and needs that motivate the architecture: human decision authority, safety, security, and privacy, reliable execution, capability amplification, and contextual adaptability. We then trace them through thirteen design principles to specific implementation choices.</p>
+<p class="dst">论文提炼出五个驱动架构的人类价值：人的决策权；安全、安保与隐私；可靠执行；能力放大；上下文适应性。然后把这些价值拆成十三条设计原则，再追踪到具体实现选择。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The core of the system is a simple while-loop that calls the model, runs tools, and repeats. Most of the code, however, lives in the systems around this loop: a permission system with seven modes and an ML-based classifier, a five-layer compaction pipeline for context management, four extensibility mechanisms (MCP, plugins, skills, and hooks), a subagent delegation and orchestration mechanism, and append-oriented session storage.</p>
+<p class="dst">系统核心是一个简单的 while-loop：调用模型、执行工具、重复。但大部分代码都在 loop 周围：7 种模式加 ML 分类器的权限系统；五层上下文压缩管线；四类扩展机制（MCP、plugins、skills、hooks）；subagent 委派与编排；以及追加式会话存储。</p>
+</div>
+
+### 五个价值
+
+<div class="bilingual-pair">
+<p class="src">Human Decision Authority: the human retains ultimate decision authority over what the system does, organized through a principal hierarchy (Anthropic, then operators, then users). The system is designed so humans can observe actions in real time, approve or reject proposed operations, interrupt compatible in-progress operations, and audit after the fact.</p>
+<p class="dst">人的决策权：人保留对系统行为的最终决定权，按 principal hierarchy 组织（Anthropic → operator → user）。系统让人能实时观察、批准/拒绝、打断进行中的操作，并在事后审计。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">When Anthropic found that users approve 93% of permission prompts, the response was not to add more warnings but to restructure the problem: defined boundaries (sandboxing, auto-mode classifiers) within which the agent can work freely, rather than per-action approvals that users stop reviewing once habituated.</p>
+<p class="dst">Anthropic 发现用户会批准 93% 的权限提示后，没有继续堆警告，而是重构问题：用沙箱、auto-mode 分类器划出可信边界，让 agent 在边界内自由工作，而不是依赖用户会逐渐麻木的逐动作审批。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Safety, Security, and Privacy: the system protects humans, their code, their data, and their infrastructure from harm, even when the human is inattentive or makes mistakes. The auto-mode threat model explicitly targets four risk categories: overeager behavior, honest mistakes, prompt injection, and model misalignment.</p>
+<p class="dst">安全、安保与隐私：即使人不在场或犯错，系统也要保护人、代码、数据和基础设施。auto-mode 的威胁模型明确覆盖四类风险：过度积极、诚实错误、prompt injection、模型错位。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Reliable Execution: the agent does what the human actually meant, stays coherent over time, and supports verifying its work before declaring success. Capability Amplification: the agent enables qualitatively new workflows, not just faster completion. Contextual Adaptability: the agent adjusts context to the codebase, task, and tool returns instead of relying on one fixed prompt.</p>
+<p class="dst">可靠执行：agent 要做人真正想做的事，跨时间保持连贯，并在宣布完成前验证结果。能力放大：agent 应支持以前做不到的新工作流，而不只是更快地补全。上下文适应性：agent 要根据代码库、任务和工具返回动态调整上下文，而不是依赖一个固定 prompt。</p>
+</div>
+
+### 核心循环与 Harness
+
+<div class="bilingual-pair">
+<p class="src">The core loop is: assemble context (system prompt, history, tool definitions, CLAUDE.md); call the model; the model returns tool calls; the permission system checks; tools execute; results are written back into context; repeat until the model gives a final answer.</p>
+<p class="dst">核心循环是：组装上下文（system prompt、历史、工具定义、CLAUDE.md）→ 调用模型 → 模型返回工具调用 → 权限系统检查 → 执行工具 → 结果写回上下文 → 重复，直到模型给出最终回答。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The architectural key is that the loop itself is thin, and the complexity is around it. That is why building a coding agent is easy, but building a reliable coding agent is hard.</p>
+<p class="dst">架构上的关键是：loop 本身很薄，复杂度都在它周围。这也是为什么“做一个 coding agent”很容易，“做一个可靠的 coding agent”很难。</p>
+</div>
+
+### 权限系统
+
+<div class="bilingual-pair">
+<p class="src">Claude Code's permission system is not a simple allow/deny dialog. It uses deny-first rule evaluation, seven permission modes, an ML classifier for auto mode, hook interception, and permission dialogs for high-risk actions. The goal is not to ask for consent on every step, but to concentrate human attention on genuinely high-risk actions.</p>
+<p class="dst">Claude Code 的权限系统不是简单的允许/拒绝弹窗，而是 deny-first 规则评估、7 种权限模式、auto 模式的 ML 分类器、hook 拦截，以及高风险动作的权限对话框。目标不是每一步都让人点同意，而是把人的注意力集中到真正高风险的动作上。</p>
+</div>
+
+### 上下文与压缩
+
+<div class="bilingual-pair">
+<p class="src">Context is a scarce resource. Claude Code's compaction is not a single "summarize" step but five layers: budget control, snipping clearly unneeded fragments, micro-compaction, collapsing large history blocks, and automatic summarization. The cost of compaction is not only tokens but information loss: the model may forget files it read, decisions it made, or exact strings.</p>
+<p class="dst">上下文是稀缺资源。Claude Code 的压缩不是单一“总结”，而是五层：预算控制、裁掉明显不需要的片段、微压缩、折叠大块历史、自动摘要。压缩的代价不只是 token，还有信息损失：模型可能忘记读过的文件、做过的决定、精确字符串。</p>
+</div>
+
+### 扩展机制
+
+<div class="bilingual-pair">
+<p class="src">Claude Code partitions extensibility into four mechanisms: MCP for connecting external services and data; plugins for packaging a set of capabilities; skills for teaching the agent a procedure, with only name and description resident and the body loaded on demand; and hooks for deterministic execution at lifecycle events.</p>
+<p class="dst">Claude Code 把扩展分成四类：MCP 连接外部服务和数据；plugins 打包一组能力；skills 教 agent 一套流程，只常驻名称和描述，正文按需加载；hooks 在生命周期事件上确定性执行。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The key observation is that extension mechanisms are not "the more the better"; each mechanism needs a clear responsibility boundary. If everything goes into the system prompt, context explodes; if everything becomes a tool, the model's selection burden explodes.</p>
+<p class="dst">关键观察是：扩展机制不是越多越好，每种机制都要有清晰职责边界。所有东西都塞进 system prompt，上下文会爆炸；所有东西都做成工具，模型的选择负担会爆炸。</p>
+</div>
+
+### Subagent 与会话持久化
+
+<div class="bilingual-pair">
+<p class="src">The architectural value of subagents is not just "doing more in parallel" but isolating context: each subtask runs in its own context window, intermediate results do not pollute the main session, and only the final message returns. This is an extension of the principle that context is a scarce resource.</p>
+<p class="dst">subagent 的架构价值不只是“并行做更多”，而是隔离上下文：子任务在自己的窗口运行，中间结果不污染主会话，只返回最终消息。这是“上下文是稀缺资源”原则的延伸。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Session storage is primarily append-only JSONL: each record is an independent JSON object, simple to write, recoverable after crashes, and easy to audit. Session-scoped permissions are not persisted into the transcript; this is a deliberate safety choice, because resuming a session should not automatically restore sensitive permissions.</p>
+<p class="dst">会话存储以追加式 JSONL 为主：每条记录是独立 JSON 对象，写入简单、崩溃后可恢复、便于审计。会话级权限不会持久化到 transcript，这是有意的安全选择：恢复会话不应自动恢复敏感权限。</p>
+</div>
+
+### 与 OpenClaw、Hermes 的对比
+
+<div class="bilingual-pair">
+<p class="src">The three systems answer the same design questions but under different deployment contexts. Claude Code is a single CLI loop emphasizing per-action safety around a local developer's codebase. OpenClaw is a multi-channel personal assistant gateway emphasizing perimeter-level access control, with the runtime embedded in the gateway control plane. Hermes Agent is a single-process, multi-surface assistant rendering per-action approvals across many interfaces.</p>
+<p class="dst">三个系统回答同一组设计问题，但部署场景不同：Claude Code 是单 CLI loop，强调本地开发者代码库的 per-action 安全；OpenClaw 是多通道个人助理网关，强调 perimeter 级访问控制，把 runtime 嵌在网关控制面；Hermes Agent 是单进程、多 surface 助理，把 per-action 审批渲染到多个界面。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The conclusion is not "who is better" but that deployment context shapes architectural answers. The same permission question gets different implementations in a CLI, an enterprise gateway, and a multi-surface assistant.</p>
+<p class="dst">结论不是“谁更好”，而是：部署场景会塑造架构答案。同一个“权限”问题，在 CLI、企业网关、多端助理里会得到不同实现。</p>
+</div>
+
+### 六个开放方向
+
+<div class="bilingual-pair">
+<p class="src">The paper identifies six open directions: the observability-evaluation gap (how to surface silent agent mistakes); cross-session persistence (the missing layer between static instructions and a single transcript); harness boundary evolution (where, when, what, and with whom the agent acts); horizon scaling (from a session to a multi-week program); governance and oversight; and long-term developer capability.</p>
+<p class="dst">论文提出六个开放方向：可观测性与评估缺口（如何发现 agent 的静默错误）；跨会话持久化（静态指令与单次 transcript 之间缺失的一层）；harness 边界演化（在哪里、何时、对什么、和谁行动）；长时程扩展（从单会话到数周项目）；治理与监督；长期开发者能力。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The last question is especially important: while the Claude Code agent system amplifies the short-term capabilities of programmers, it offers limited mechanisms that explicitly support long-term human improvement, deeper understanding, and sustained codebase coherence.</p>
+<p class="dst">最后一个问题尤其重要：Claude Code 放大了程序员的短期能力，但对长期的人类成长、更深的理解、代码库持续一致性，提供的显式机制很有限。</p>
+</div>
+
+### 十三条设计原则
+
+<div class="bilingual-pair">
+<p class="src">The five values are operationalized through thirteen design principles, each answering a recurring question. Key principles include: deny-first with human escalation; a graduated trust spectrum; defense in depth with layered mechanisms; externalized programmable policy; context as a scarce resource with progressive management; append-only durable state; minimal scaffolding with maximal operational harness; values over rules; composable multi-mechanism extensibility; reversibility-weighted risk assessment; transparent file-based configuration and memory; isolated subagent boundaries; and graceful recovery and resilience.</p>
+<p class="dst">五个价值被拆成十三条设计原则，每条回答一个反复出现的问题。核心原则包括：deny-first + 人工升级；渐进式信任光谱；分层纵深防御；可外部化的可编程策略；把上下文当稀缺资源并渐进管理；追加式持久状态；最小决策脚手架 + 最大操作 harness；价值高于规则；可组合的多机制扩展；按可逆性加权风险评估；透明的文件式配置与记忆；隔离的 subagent 边界；优雅恢复与韧性。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">These principles can be read against three alternative design families: rule-based orchestration frameworks that encode decision logic as explicit state graphs; container-isolated agents that treat sandboxing as the primary safety mechanism; and minimal-harness agents that rely almost entirely on model capability. Claude Code's principle set is distinctive in combining minimal decision scaffolding with layered policy enforcement.</p>
+<p class="dst">这些原则可以和三类替代设计对照：把决策逻辑编码成显式状态图的规则编排框架；把容器隔离当作主要安全机制的 agent；几乎完全依赖模型能力的最小 harness。Claude Code 的独特之处，是把“最小决策脚手架”和“分层策略执行”组合在一起。</p>
+</div>
+
+### 架构总览：七个组件
+
+<div class="bilingual-pair">
+<p class="src">The high-level architecture has seven components: the user; the agent loop; interfaces; the permission system; tools; state and persistence; and the execution environment. Runtime turns flow through context assembly, model call, tool request, permission check, tool execution, result synchronization, and either another iteration or a final response.</p>
+<p class="dst">高层架构有七个组件：用户；agent loop；接口；权限系统；工具；状态与持久化；执行环境。一次运行时 turn 会经过：上下文组装 → 模型调用 → 工具请求 → 权限检查 → 工具执行 → 结果同步 → 继续迭代或给出最终回答。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The package is organized around a src/ directory. query.ts contains the core agent loop and five context shapers; QueryEngine.ts wraps the SDK/headless conversation; Tool.ts defines the tool interface; compact.ts is the compaction engine; AgentTool.tsx dispatches subagents; runAgent.ts coordinates agent lifecycle. The tools/ directory contains roughly 42 tool implementations and commands/ roughly 86 slash commands.</p>
+<p class="dst">代码包围绕 `src/` 组织：`query.ts` 是核心 agent loop 和五个上下文 shaper；`QueryEngine.ts` 封装 SDK/headless 会话；`Tool.ts` 定义工具接口；`compact.ts` 是压缩引擎；`AgentTool.tsx` 负责 subagent 派发；`runAgent.ts` 协调 agent 生命周期。`tools/` 约 42 个工具实现，`commands/` 约 86 个 slash command。</p>
+</div>
+
+### 工具与扩展面
+
+<div class="bilingual-pair">
+<p class="src">Tool availability is conditional. getAllBaseTools() constructs different tool sets depending on mode, build, environment, and feature flags. The model may see as few as three tools in simple mode (Bash, Read, Edit) or up to 54 tools (19 unconditional plus 35 conditional) in a full internal build with all features enabled.</p>
+<p class="dst">工具可用性是条件化的。`getAllBaseTools()` 会根据模式、构建、环境和 feature flag 构造不同工具集。简单模式可能只有 3 个工具（Bash、Read、Edit）；完整内部构建最多 54 个（19 个无条件 + 35 个条件工具）。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Always included tools include AgentTool, BashTool, FileReadTool, FileEditTool, FileWriteTool, SkillTool, WebFetchTool, and WebSearchTool. Environment-specific tools include Glob/Grep, ConfigTool, and PowerShellTool on Windows. Feature-flagged tools include task tools, worktree, team/swarm tools, and tool search.</p>
+<p class="dst">始终包含的工具包括 AgentTool、BashTool、FileReadTool、FileEditTool、FileWriteTool、SkillTool、WebFetchTool、WebSearchTool。环境相关工具包括 Glob/Grep、ConfigTool、Windows 上的 PowerShellTool。feature flag 工具包括 task、worktree、team/swarm、tool search。</p>
+</div>
+
+### 上下文管理：五层压缩与 CLAUDE.md
+
+<div class="bilingual-pair">
+<p class="src">Context management is a five-layer compaction pipeline (budget, snip, micro, collapse, auto), plus a four-level CLAUDE.md hierarchy, auto memory in memdir/, and context assembly through getSystemContext() and getUserContext(). The design treats context as a scarce resource and tries to preserve the most decision-relevant material.</p>
+<p class="dst">上下文管理是五层压缩管线（budget、snip、micro、collapse、auto），加上四级 CLAUDE.md 层级、`memdir/` 自动记忆，以及通过 `getSystemContext()` / `getUserContext()` 做上下文组装。设计把上下文当稀缺资源，尽量保留与决策最相关的材料。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Compaction is lossy. The system has to trade token cost against information loss: a longer raw window preserves exact strings and decisions but costs more per step; a shorter summary saves tokens but can make the agent forget files, constraints, and earlier reasoning.</p>
+<p class="dst">压缩是有损的。系统必须在 token 成本与信息损失之间取舍：更长的原始窗口保留精确字符串和决定，但每一步更贵；更短的摘要省 token，但可能让 agent 忘记文件、约束和之前的推理。</p>
+</div>
+
+### 会话持久化
+
+<div class="bilingual-pair">
+<p class="src">Session persistence is append-oriented. Each session is stored as JSONL transcripts, with sidechains and file-history. Append-only storage is simple to write, recoverable after crashes, and auditable. Session-scoped permissions are deliberately not persisted, so resuming a session does not silently restore sensitive authority.</p>
+<p class="dst">会话持久化以追加为主：每个会话存成 JSONL transcript，带 sidechain 和 file-history。追加式存储写入简单、崩溃后可恢复、便于审计。会话级权限有意不持久化，恢复会话时不会悄悄恢复敏感权限。</p>
+</div>
+
+### 相关工作与讨论
+
+<div class="bilingual-pair">
+<p class="src">The paper positions Claude Code against prior agent architectures, software-engineering agents, and work on context, memory, and tool use. It reads the architecture as a coherent design point and surfaces tensions: model capability versus harness investment, local autonomy versus global coherence, context preservation versus token cost, and short-term productivity versus long-term developer capability.</p>
+<p class="dst">论文把 Claude Code 放在既有 agent 架构、软件工程 agent、上下文/记忆/工具使用研究的背景下，把它的架构读成一个自洽的设计点，并揭示几组张力：模型能力 vs harness 投资；局部自主 vs 全局一致；保留上下文 vs token 成本；短期生产力 vs 长期开发者能力。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The discussion also notes that Claude Code gives the model broad local autonomy while surrounding it with a dense deterministic harness. Good local decisions can still produce poor global outcomes when bounded context prevents global awareness.</p>
+<p class="dst">讨论还指出：Claude Code 给模型广泛的局部自主权，同时用一层密集、确定性的 harness 包围它。即使局部决策很好，只要上下文边界阻止了全局视野，也可能产生糟糕的全局结果。</p>
+</div>
+
+### 结论
+
+<div class="bilingual-pair">
+<p class="src">Production coding agents can be understood as answers to a recurring set of design questions: where reasoning sits relative to the harness, how execution, safety, extensibility, context, delegation, and persistence are organized, and which trade-offs those choices encode. Claude Code occupies a clear design point: it gives the model broad local autonomy while surrounding it with a dense deterministic harness.</p>
+<p class="dst">生产级 coding agent 可以理解为对一组反复出现的设计问题的回答：推理相对 harness 放在哪里；执行、安全、扩展、上下文、委派、持久化如何组织；这些选择编码了哪些取舍。Claude Code 占据了一个清晰的设计点：给模型广泛的局部自主权，同时用一层密集、确定性的 harness 包围它。</p>
+</div>
+
+## 机器翻译参考（未精修）
+
+<details>
+<summary>展开全文逐段机翻（857 段）</summary>
+
+> **翻译说明：**以下为原文逐段直译，保留原文段落顺序与信息；术语做了统一，机器辅助翻译后经过常见误译校正。总结、学习者视角与拓展已单独列出。
+
+<div class="bilingual-pair"><p class="src">Dive into Claude Code: The Design Space of Today’s</p><p class="dst">深入了解 Claude Code：当今的设计空间</p></div>
+
+<div class="bilingual-pair"><p class="src">and Future AI Agent Systems Jiacheng Liu1,∗, Xiaohan Zhao1,∗, Xinyi Shang1,2, Zhiqiang Shen1,† 1VILA Lab, Mohamed bin Zayed University of Artificial Intelligence, 2University College London ∗These authors contributed equally to this work, †Corresponding author Claude Code is an agentic coding tool that can run shell commands, edit files, and call external services on behalf of the user. This study describes its comprehensive architecture by analyzing the publicly available TypeScript source codea and further comparing it with two independent open-source AI agent systems, OpenClaw and Hermes Agent, that answer many similar or even the same design questions from different deployment contexts. Our analysis identifies five human values, philosophies, and needs that motivate the architecture: human decision authority, safety, security, and privacy, reliable execution, capability amplification, and contextual adaptability. We then trace them through thirteen design principles to specific implementation choices. The core of the system is a simple while-loop that calls the model, runs tools, and repeats. Most of the code, however, lives in the systems around this loop: a permission system with seven modes and an ML-based classifier, a five-layer compaction pipeline for context management, four extensibility mechanisms (MCP, plugins, skills, and hooks), a subagent delegation and orchestration mechanism, and append-oriented session storage.</p><p class="dst">和未来人工智能代理系统 Jia Cheng Liu1,*、Xiaohan Zhao1,*、Xinyi Shang1,2、Zhiqiang Shen1,† 1VILA 实验室、穆罕默德·本·扎耶德人工智能大学、2 伦敦大学学院 *这些作者对这项工作做出了同等贡献，†通讯作者 Claude Code 是一种代理编码工具，可以代表用户运行 shell 命令、编辑文件和调用外部服务。本研究通过分析公开的 TypeScript 源代码来描述其综合架构，并进一步将其与两个独立的开源 AI agent系统 OpenClaw 和 Hermes Agent 进行比较，这两个系统回答了来自不同部署环境的许多相似甚至相同的设计问题。我们的分析确定了推动架构的五种人类价值观、哲学和需求：人类决策权、安全性和隐私、可靠执行、能力放大和上下文适应性。然后，我们通过十三个设计原则追踪它们，直至具体的实现选择。该系统的核心是一个简单的 while 循环，用于调用模型、运行工具并重复。然而，大部分代码都存在于围绕此循环的系统中：具有七种模式和基于 ML 的分类器的权限系统、用于上下文管理的五层压缩管道、四种可扩展性机制（MCP、插件、技能和挂钩）、subagent委托和编排机制以及面向附加的会话存储。</p></div>
+
+<div class="bilingual-pair"><p class="src">Comparisons with OpenClaw (a multi-channel personal assistant gateway) and Hermes Agent (a single-process, multi-surface assistant) show that the same design questions produce different answers across three deployment contexts. Claude Code emphasizes per-action safety, OpenClaw emphasizes perimeter-level access, and Hermes renders per-action approvals across many surfaces. At the runtime layer, Claude Code uses a single CLI loop, OpenClaw embeds the runtime within a gateway control plane, and Hermes uses one process whose role is set by its entry point. At the context and extension layer, Claude Code extends the context window, OpenClaw registers gateway-wide capabilities, and Hermes provides pluggable memory and model backends. We finally identify six open design directions for future agent systems, grounded in recent empirical, architectural, and policy literature. Our GitHub is available at: https://github.com/VILA-Lab/Dive-into-Claude-Code.</p><p class="dst">与 OpenClaw（多通道个人助理网关）和 Hermes Agent（单进程、多表面助理）的比较表明，相同的设计问题在三种部署环境中会产生不同的答案。 Claude Code 强调每次操作的安全性，OpenClaw 强调外围级别的访问，而 Hermes 则在许多表面上提供每次操作的批准。在运行时层，Claude Code 使用单个 CLI 循环，OpenClaw 将运行时嵌入网关控制平面内，而 Hermes 使用一个进程，其角色由其入口点设置。在上下文和扩展层，Claude Code扩展了上下文窗口，OpenClaw注册了网关范围的功能，Hermes提供了可插拔的内存和模型后端。我们最终根据最近的经验、架构和政策文献，确定了未来代理系统的六个开放设计方向。我们的 GitHub 位于：https://github.com/VILA-Lab/Dive-into-Claude-Code。</p></div>
+
+<div class="bilingual-pair"><p class="src">Correspondence: Zhiqiang Shen (Zhiqiang.Shen@mbzuai.ac.ae)</p><p class="dst">通讯作者：沉志强（Zhiqiang.Shen@mbzuai.ac.ae）</p></div>
+
+<div class="bilingual-pair"><p class="src">av2.1.88, link. Disclaimer: All materials used in this work are obtained from publicly available online sources. We have not used any private, confidential, or unauthorized materials, and we do not intend to infringe any copyright or intellectual property rights. The original intellectual property rights to the source code belong to Anthropic.</p><p class="dst">av2.1.88，链接。免责声明：本作品中使用的所有材料均来自公开的在线资源。我们没有使用任何私人、机密或未经授权的材料，并且我们无意侵犯任何版权或知识产权。源代码的原始知识产权属于Anthropic。</p></div>
+
+<div class="bilingual-pair"><p class="src">1</p><p class="dst">1</p></div>
+
+<div class="bilingual-pair"><p class="src">Introduction</p><p class="dst">简介</p></div>
+
+<div class="bilingual-pair"><p class="src">AI-assisted software development has evolved from autocomplete-style tools such as GitHub Copilot (Chen et al., 2021), through IDE-integrated assistants like Cursor (Cursor, 2026), to fully agentic systems that autonomously plan multi-step modifications, execute shell commands, read and write files, and iterate on their own outputs. Claude Code (Anthropic, 2026a) is an agentic coding tool released by Anthropic (Anthropic, 2026g).</p><p class="dst">人工智能辅助软件开发已经从 GitHub Copilot（Chen 等人，2021）等自动完成式工具，通过 Cursor（Cursor，2026）等 IDE 集成助手，发展到自主规划多步骤修改、执行 shell 命令、读写文件以及迭代自己的输出的完全代理系统。 Claude Code (Anthropic, 2026a) 是 Anthropic (Anthropic, 2026g) 发布的代理编码工具。</p></div>
+
+<div class="bilingual-pair"><p class="src">Its official documentation describes an “agentic loop” that plans and executes actions toward accomplishing a goal and can call tools, evaluate results, and continue until the task is done 1. This shift</p><p class="dst">其官方文档描述了一个“代理循环”，该循环计划和执行行动以实现目标，并且可以调用工具、评估结果并继续直到任务完成 1。这种转变</p></div>
+
+<pre class="code-block">from suggestion to autonomous action introduces architectural requirements that have no counterpart in</pre>
+
+<div class="bilingual-pair"><p class="src">completion-based tools. These requirements define a design space, a set of recurring questions spanning topics such as safety, context management, extensibility, and delegation that every coding agent must navigate. This study uses source-level analysis of Claude Code to show how one production system answers these questions.</p><p class="dst">基于完成的工具。这些需求定义了一个设计空间，一组重复出现的问题，涵盖每个coding agent必须导航的安全性、上下文管理、可扩展性和委派等主题。这项研究使用Claude代码的源代码级分析来展示一个生产系统如何回答这些问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">Despite growing adoption, Anthropic publishes user-facing documentation for Claude Code but not detailed 1https://code.claude.com/docs/en/how-claude-code-works.</p><p class="dst">尽管采用率不断提高，Anthropic 发布了面向用户的 Claude Code 文档，但没有详细说明 1https://code.claude.com/docs/en/how-claude-code-works。</p></div>
+
+<div class="bilingual-pair"><p class="src">1</p><p class="dst">1</p></div>
+
+<div class="bilingual-pair"><p class="src">arXiv:2604.14228v3 [cs.SE] 10 Oct 2026 architectural descriptions. This study uses source code analysis to describe architectural design decisions.</p><p class="dst">arXiv:2604.14228v3 [cs.SE] 2026 年 10 月 10 日架构描述。本研究使用源代码分析来描述架构设计决策。</p></div>
+
+<div class="bilingual-pair"><p class="src">Anthropic’s internal survey of 132 engineers and researchers (Huang et al., 2025) reports that about 27% of Claude Code-assisted tasks were work that would not have been attempted without the tool, suggesting that the architecture enables qualitatively new workflows rather than merely accelerating existing ones.</p><p class="dst">Anthropic 对 132 名工程师和研究人员进行的内部调查（Huang 等人，2025）报告称，大约 27% 的 Claude Code 辅助任务是如果没有该工具就不会尝试的工作，这表明该架构能够实现高质量的新工作流程，而不仅仅是加速现有的工作流程。</p></div>
+
+<div class="bilingual-pair"><p class="src">In this work, we first identify five human values/philosophies and thirteen design principles that motivate the architecture (Section 2), then organize the analysis in three parts:</p><p class="dst">在这项工作中，我们首先确定了推动架构的五种人类价值观/哲学和十三种设计原则（第 2 节），然后将分析分为三个部分：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Design-space analysis. We identify recurring design questions (where reasoning lives, how the iteration loop is structured, what safety posture to adopt, how the extension surface is partitioned, how context is managed, how work is delegated across subagents, and how sessions persist) and analyze Claude Code’s answers through a 7-component high-level structure and a 5-layer subsystem architecture, tracing each choice to specific source files (Section 3). The analysis aims to build a deep understanding of the system mechanism, with the goal of informing the design of better and more powerful agent systems.</p><p class="dst">1.设计空间分析。我们识别重复出现的设计问题（推理在哪里、迭代循环如何构建、采用什么安全态势、扩展表面如何分区、上下文如何管理、如何跨subagent委派工作以及会话如何持续），并通过 7 个组件的高级结构和 5 层子系统架构分析 Claude Code 的答案，将每个选择跟踪到特定的源文件（第 3 节）。该分析旨在加深对系统机制的理解，为更好、更强大的代理系统的设计提供信息。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Architectural contrast with OpenClaw and Hermes Agent. Beyond analyzing Claude Code itself, we also compare its design philosophy with that of two open-source agent systems, OpenClaw (Steinberger and OpenClaw Contributors, 2026) (a multi-channel personal assistant gateway) and Hermes Agent (Nous Research, 2026) (a single-process, multi-surface assistant), across six design dimensions to show how the same recurring questions produce different answers under different deployment contexts (Section 10), in order to highlight both the common principles and the key differences between commercial and open-source software. This comparison helps reveal how deployment setting, product goals, safety requirements, and user assumptions shape architectural choices in different ways. By examining where these systems converge and where they diverge, our study aims to provide useful guidance and practical insights for the design of future, more capable agent systems.</p><p class="dst">2.与OpenClaw和Hermes Agent的架构对比。除了分析 Claude Code 本身之外，我们还将其设计理念与两个开源代理系统 OpenClaw（Steinberger 和 OpenClaw Contributors，2026）（多通道个人助理网关）和 Hermes Agent（Nous Research，2026）（单进程、多表面助理）的设计理念进行了六个设计维度的比较，以展示相同的重复问题如何在不同的部署环境下产生不同的答案（第 10 节），以突出商业软件和开源软件之间的共同原则和主要区别。这种比较有助于揭示部署设置、产品目标、安全要求和用户假设如何以不同的方式影响架构选择。通过研究这些系统的汇聚点和分歧点，我们的研究旨在为未来更强大的代理系统的设计提供有用的指导和实用的见解。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Open directions for future agent systems. Building on the design-space analysis and the OpenClaw and Hermes contrasts, Section 13 identifies six open directions spanning the observability-evaluation gap, cross-session persistence, harness boundary evolution, horizon scaling, governance, and long-term developer capability, each drawing on empirical, architectural, and policy literature. The long-term capability question also reveals an open concern: while the Claude Code agent system amplifies the short-term capabilities of programmers and end users, it offers limited mechanisms that explicitly support long-term human improvement, deeper understanding, and sustained codebase coherence.</p><p class="dst">3.为未来代理系统开放方向。基于设计空间分析以及 OpenClaw 和 Hermes 对比，第 13 节确定了六个开放方向，涵盖可观察性评估差距、跨会话持久性、harness边界演变、水平扩展、治理和长期开发人员能力，每个方向都借鉴了经验、架构和政策文献。长期能力问题还揭示了一个公开的担忧：虽然Claude代码代理系统增强了程序员和最终用户的短期能力，但它提供了有限的机制，明确支持长期的人类改进、更深入的理解和持续的代码库一致性。</p></div>
+
+<div class="bilingual-pair"><p class="src">The core agent loop is a while-true cycle with state management. The surrounding subsystems for safety, extensibility, context management, delegation, and persistence make up the bulk of the implementation.</p><p class="dst">核心代理循环是一个带有状态管理的 while-true 循环。安全性、可扩展性、上下文管理、委派和持久性的周围子系统构成了实现的大部分。</p></div>
+
+<div class="bilingual-pair"><p class="src">Source-level analysis2 allows us to identify design choices, subsystem boundaries, and implementation trade-offs directly from the system itself rather than inferring them solely from product descriptions.</p><p class="dst">源代码级分析2使我们能够直接从系统本身识别设计选择、子系统边界和实现权衡，而不是仅从产品描述中推断它们。</p></div>
+
+<div class="bilingual-pair"><p class="src">Running example.</p><p class="dst">运行示例。</p></div>
+
+<div class="bilingual-pair"><p class="src">To keep the architecture concrete, we trace the task “Fix the failing test in auth.test.ts” through Sections 3 to 9. This example illustrates how a seemingly simple user request activates multiple architectural layers, including tool invocation, permission checks, context selection, iterative repair, delegation, and session persistence.</p><p class="dst">为了保持架构具体，我们通过第 3 节到第 9 节跟踪任务“修复 auth.test.ts 中的失败测试”。这个示例说明了看似简单的用户请求如何激活多个架构层，包括工具调用、权限检查、上下文选择、迭代修复、委托和会话持久性。</p></div>
+
+<div class="bilingual-pair"><p class="src">Paper organization.</p><p class="dst">论文组织。</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 2 identifies the human values and design principles that motivate the architecture.</p><p class="dst">第 2 部分确定了推动架构的人类价值观和设计原则。</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 3 introduces the high-level architecture and the design questions it answers. Sections 4 to 9 each analyze a major subsystem’s design choices. Section 10 contrasts the analysis with OpenClaw and Hermes Agent, Section 11 positions the work against prior agent and software-engineering literature, Section 12 provides discussion, and Section 13 surveys open questions for future agent systems. Section 14 concludes. The appendix describes the evidence base and methodology, package-structure notes, community reimplementations, and a companion map from new agent-system signals to the paper’s design-space questions.</p><p class="dst">第 3 节介绍了高层架构及其回答的设计问题。第 4 节到第 9 节分别分析了主要子系统的设计选择。第 10 节将分析与 OpenClaw 和 Hermes Agent 进行对比，第 11 节根据先前的代理和软件工程文献定位工作，第 12 节提供讨论，第 13 节调查未来代理系统的开放问题。第 14 节总结。附录描述了证据基础和方法、包结构注释、社区重新实现以及从新代理系统信号到论文设计空间问题的配套图。</p></div>
+
+<div class="bilingual-pair"><p class="src">2Our analysis is grounded primarily in the source code, supplemented by official Anthropic documentation and selected community analysis. The appendix details the evidence base and methodology.</p><p class="dst">2我们的分析主要基于源代码，辅以官方 Anthropic 文档和选定的社区分析。附录详细介绍了证据基础和方法。</p></div>
+
+<div class="bilingual-pair"><p class="src">2</p><p class="dst">2</p></div>
+
+<div class="bilingual-pair"><p class="src">2</p><p class="dst">2</p></div>
+
+<div class="bilingual-pair"><p class="src">Design Philosophies, Design Principles and Architectural Motivations</p><p class="dst">设计理念、设计原则和建筑动机</p></div>
+
+<div class="bilingual-pair"><p class="src">Production coding agents are built by humans, for humans, and the architectural decisions they embed reflect what their creators believe matters. This section identifies the human values that motivate Claude Code’s design, traces them through recurring design principles, and frames the design-space questions that organize the analysis in Sections 3 to 9.</p><p class="dst">生产coding agent是由人类构建的，为人类而构建，它们嵌入的架构决策反映了其创建者认为重要的内容。本节确定了激发 Claude Code 设计的人类价值观，通过重复出现的设计原则追踪它们，并构建了组织第 3 节至第 9 节中分析的设计空间问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">Anthropic’s framework for safe agents states a central tension: “Agents must be able to work autonomously; their independent operation is exactly what makes them valuable. But humans should retain control over how their goals are pursued” (Anthropic, 2025a). Claude’s Constitution resolves this not through rigid decision procedures but by cultivating “good judgment and sound values that can be applied contextually” (Anthropic, 2026b).</p><p class="dst">Anthropic 的安全代理框架提出了一个核心张力：“代理必须能够自主工作；他们的独立运作正是使他们有价值的原因。但人类应该保留对其目标实现方式的控制”（Anthropic，2025a）。Claude宪法不是通过严格的决策程序来解决这个问题，而是通过培养“良好的判断力和可以根据具体情况应用的合理价值观”（Anthropic，2026b）。</p></div>
+
+<div class="bilingual-pair"><p class="src">These commitments, together with empirical findings about how developers actually use the tool (Huang et al., 2025; McCain et al., 2026), point to five human values that shape the architecture.</p><p class="dst">这些承诺以及有关开发人员实际如何使用该工具的实证结果（Huang 等人，2025 年；McCain 等人，2026 年）指出了塑造架构的五种人类价值观。</p></div>
+
+<div class="bilingual-pair"><p class="src">2.1</p><p class="dst">2.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Five Values and Philosophies</p><p class="dst">五种价值观和哲学</p></div>
+
+<div class="bilingual-pair"><p class="src">Human Decision Authority.</p><p class="dst">人类决策权。</p></div>
+
+<div class="bilingual-pair"><p class="src">The human retains ultimate decision authority over what the system does, organized through a principal hierarchy (Anthropic, then operators, then users) that formalizes who holds authority over what (Anthropic, 2026b). The system is designed so that humans can exercise informed control: they can observe actions in real time, approve or reject proposed operations, interrupt compatible in-progress operations, and audit after the fact. When Anthropic found that users approve 93% of permission prompts (Hughes, 2026), the response was not to add more warnings but to restructure the problem: defined boundaries (sandboxing, auto-mode classifiers) within which the agent can work freely, rather than per-action approvals that users stop reviewing once habituated (Dworken and Weller-Davies, 2025).</p><p class="dst">人类保留对系统功能的最终决策权，通过主要层次结构（人择，然后操作员，然后用户）组织，正式确定谁对什么拥有权力（人择，2026b）。该系统的设计使人们能够进行知情控制：他们可以实时观察操作，批准或拒绝拟议的操作，中断兼容的正在进行的操作，并在事后进行审核。当 Anthropic 发现用户批准了 93% 的权限提示时（Hughes，2026），回应不是添加更多警告，而是重构问题：定义代理可以在其中自由工作的边界（沙箱、自动模式分类器），而不是用户一旦习惯就停止审查的每个操作批准（Dworken 和 Weller-Davies，2025）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety, Security, and Privacy.</p><p class="dst">安全、安保和隐私。</p></div>
+
+<div class="bilingual-pair"><p class="src">The system protects humans, their code, their data, and their infrastructure</p><p class="dst">该系统保护人类、他们的代码、他们的数据和他们的基础设施</p></div>
+
+<pre class="code-block">from harm, even when the human is inattentive or makes mistakes. This is distinct from Human Decision</pre>
+
+<div class="bilingual-pair"><p class="src">Authority: where authority is about the human’s power to choose, safety is about the system’s obligation to protect even when that power lapses. Anthropic’s safe-agents framework separately identifies securing agent interactions and protecting privacy across extended interactions as core commitments (Anthropic, 2025a).</p><p class="dst">权威：权威是指人类的选择权，而安全则是指系统即使在这种权力失效时也有义务提供保护。 Anthropic 的安全代理框架将安全代理交互和跨扩展交互的隐私保护分别确定为核心承诺（Anthropic，2025a）。</p></div>
+
+<div class="bilingual-pair"><p class="src">The auto-mode threat model (Hughes, 2026) explicitly targets four risk categories: overeager behavior, honest mistakes, prompt injection, and model misalignment.</p><p class="dst">自动模式威胁模型（Hughes，2026）明确针对四种风险类别：过度热切行为、诚实错误、提示注入和模型错位。</p></div>
+
+<div class="bilingual-pair"><p class="src">Reliable Execution.</p><p class="dst">可靠的执行。</p></div>
+
+<div class="bilingual-pair"><p class="src">The agent does what the human actually meant, stays coherent over time, and supports</p><p class="dst">代理按照人类实际的意思行事，随着时间的推移保持一致，并支持</p></div>
+
+<div class="bilingual-pair"><p class="src">verifying its work before declaring success. This value spans both single-turn correctness (did it interpret the request faithfully?) and long-horizon dependability (does it remain coherent across context window boundaries, session resumption, and multi-agent delegation?). Anthropic’s product documentation (Anthropic, 2026h) describes a three-phase loop that the agent repeats until the task is complete: gather context, take action, and verify results. The agent design guidance (Schluntz and Zhang, 2024) further emphasizes that “ground truth from the environment” at each step assesses progress. The harness-design guidance (Rajasekaran, 2026) likewise notes that “agents tend to respond by confidently praising the work,” even when quality is mediocre, motivating separation of generation from evaluation.</p><p class="dst">在宣布成功之前验证其工作。该值涵盖单轮正确性（它是否忠实地解释了请求？）和长期可靠性（它是否在上下文窗口边界、会话恢复和多代理委托之间保持一致？）。 Anthropic 的产品文档（Anthropic，2026h）描述了代理重复直到任务完成的三阶段循环：收集上下文、采取行动并验证结果。代理设计指南（Schluntz 和Zhang，2024）进一步强调每一步的“来自环境的基本事实”都会评估进度。harness设计指南（Rajasekaran，2026）同样指出，即使质量平庸，“代理人往往会通过自信地赞扬工作来做出回应”，从而促使生成与评估分离。</p></div>
+
+<div class="bilingual-pair"><p class="src">Capability Amplification.</p><p class="dst">能力放大。</p></div>
+
+<div class="bilingual-pair"><p class="src">The system materially increases what the human can accomplish per unit of effort</p><p class="dst">该系统大大增加了人类每单位努力所能完成的任务</p></div>
+
+<div class="bilingual-pair"><p class="src">and cost. Anthropic’s internal survey (Huang et al., 2025), discussed in Section 1, suggests that the architecture enables qualitatively new workflows, not merely faster existing ones: approximately 27% of tasks represented work that would not otherwise have been attempted. The system is described by its creators as “a Unix utility rather than a traditional product,” built from the smallest building blocks that are “useful, understandable, and extensible” (Cherny and Wu, 2025). The architecture invests in deterministic infrastructure (context management, tool routing, recovery) rather than decision scaffolding (explicit planners or state graphs), on the premise that increasingly capable models benefit more from a rich operational environment than from frameworks that constrain their choices.</p><p class="dst">和成本。 Anthropic 的内部调查（Huang 等人，2025）（在第 1 节中讨论）表明，该架构能够实现高质量的新工作流程，而不仅仅是更快的现有工作流程：大约 27% 的任务代表了原本不会尝试的工作。该系统被其创建者描述为“一个 Unix 实用程序，而不是传统产品”，由“有用、可理解和可扩展”的最小构建块构建而成（Cherny 和 Wu，2025）。该架构投资于确定性基础设施（上下文管理、工具路由、恢复），而不是决策脚手架（显式规划器或状态图），前提是功能日益强大的模型从丰富的操作环境中获益更多，而不是从限制其选择的框架中受益。</p></div>
+
+<div class="bilingual-pair"><p class="src">Contextual Adaptability.</p><p class="dst">情境适应性。</p></div>
+
+<div class="bilingual-pair"><p class="src">The system fits the user’s specific context (their project, tools, conventions, and</p><p class="dst">该系统适合用户的特定环境（他们的项目、工具、约定和</p></div>
+
+<div class="bilingual-pair"><p class="src">skill level) and the relationship improves over time. The extension architecture (CLAUDE.md, skills, MCP, 3 Table 1 Design principles, the values they serve, and the design-space question each answers. Principles map to multiple values; implementations appear in the sections indicated.</p><p class="dst">技能水平），并且关系会随着时间的推移而改善。扩展架构（CLAUDE.md、技能、MCP、3 表 1 设计原则、它们所服务的价值以及每个答案的设计空间问题。原则映射到多个价值；实现出现在指示的部分中。</p></div>
+
+<div class="bilingual-pair"><p class="src">Principle</p><p class="dst">原理</p></div>
+
+<div class="bilingual-pair"><p class="src">Values Served</p><p class="dst">服务价值</p></div>
+
+<div class="bilingual-pair"><p class="src">Design Question</p><p class="dst">设计问题</p></div>
+
+<div class="bilingual-pair"><p class="src">Sections</p><p class="dst">部分</p></div>
+
+<div class="bilingual-pair"><p class="src">Deny-first with human</p><p class="dst">人类的否认优先</p></div>
+
+<div class="bilingual-pair"><p class="src">escalation Authority, Safety Should unrecognized actions be allowed, blocked, or escalated to the human?</p><p class="dst">升级 权限、安全 是否应该允许、阻止或升级给人员未识别的操作？</p></div>
+
+<div class="bilingual-pair"><p class="src">5, 8, 9</p><p class="dst">5、8、9</p></div>
+
+<div class="bilingual-pair"><p class="src">Graduated trust spectrum</p><p class="dst">分级信任谱</p></div>
+
+<div class="bilingual-pair"><p class="src">Authority, Adaptability</p><p class="dst">权威性、适应性</p></div>
+
+<div class="bilingual-pair"><p class="src">Fixed permission level, or a spectrum users</p><p class="dst">固定权限级别，或频谱用户</p></div>
+
+<div class="bilingual-pair"><p class="src">traverse over time? 5 Defense in depth with layered mechanisms Safety, Authority, Reliability Single safety boundary, or multiple overlapping ones using different techniques?</p><p class="dst">穿越时空？ 5 分层机制纵深防御 安全性、权威性、可靠性 单一安全边界，还是使用不同技术的多个重叠安全边界？</p></div>
+
+<div class="bilingual-pair"><p class="src">3, 5</p><p class="dst">3, 5</p></div>
+
+<div class="bilingual-pair"><p class="src">Externalized</p><p class="dst">外在化</p></div>
+
+<div class="bilingual-pair"><p class="src">programmable policy Safety, Authority, Adaptability Hardcoded policy, or externalized configs with lifecycle hooks?</p><p class="dst">可编程策略 安全性、权威性、适应性 硬编码策略，还是带有生命周期挂钩的外部化配置？</p></div>
+
+<div class="bilingual-pair"><p class="src">5, 6</p><p class="dst">5, 6</p></div>
+
+<div class="bilingual-pair"><p class="src">Context as scarce resource</p><p class="dst">上下文作为稀缺资源</p></div>
+
+<div class="bilingual-pair"><p class="src">with progressive management Reliability, Capability What is the binding resource constraint, and how to manage it: single-pass truncation or graduated pipeline?</p><p class="dst">渐进式管理 可靠性、能力 绑定资源约束是什么，以及如何管理它：单遍截断还是分级管道？</p></div>
+
+<div class="bilingual-pair"><p class="src">4, 6, 7, 8</p><p class="dst">4, 6, 7, 8</p></div>
+
+<div class="bilingual-pair"><p class="src">Append-only durable state</p><p class="dst">仅追加持久状态</p></div>
+
+<div class="bilingual-pair"><p class="src">Reliability, Authority</p><p class="dst">可靠性、权威性</p></div>
+
+<div class="bilingual-pair"><p class="src">Mutable state, checkpoint snapshots, or</p><p class="dst">可变状态、检查点快照或</p></div>
+
+<div class="bilingual-pair"><p class="src">append-only logs? 4, 9 Minimal scaffolding, maximal operational harness Capability, Reliability Invest in scaffolding-side reasoning, or operational infrastructure that lets the model reason freely?</p><p class="dst">仅附加日志？ 4, 9 最小的脚手架，最大的运营harness 能力、可靠性 投资脚手架端推理，还是让模型自由推理的运营基础设施？</p></div>
+
+<div class="bilingual-pair"><p class="src">3, 4</p><p class="dst">3, 4</p></div>
+
+<div class="bilingual-pair"><p class="src">Values over rules</p><p class="dst">价值观高于规则</p></div>
+
+<div class="bilingual-pair"><p class="src">Capability, Authority</p><p class="dst">能力、权威</p></div>
+
+<div class="bilingual-pair"><p class="src">Rigid decision procedures, or contextual judgment</p><p class="dst">严格的决策程序或情境判断</p></div>
+
+<div class="bilingual-pair"><p class="src">backed by deterministic guardrails? 3, 5, 7 Composable multi-mechanism extensibility Capability, Adaptability One unified extension API, or layered mechanisms at different context costs?</p><p class="dst">由确定性护栏支持？ 3,5,7 可组合的多机制扩展能力、适应性 一个统一的扩展API，还是不同上下文成本的分层机制？</p></div>
+
+<div class="bilingual-pair"><p class="src">6</p><p class="dst">6</p></div>
+
+<div class="bilingual-pair"><p class="src">Reversibility-weighted risk</p><p class="dst">可逆性加权风险</p></div>
+
+<div class="bilingual-pair"><p class="src">assessment Capability, Safety Same oversight for all actions, or lighter for reversible and read-only ones?</p><p class="dst">评估能力、安全性 对所有操作进行同样的监督，还是对可逆和只读操作进行更轻的监督？</p></div>
+
+<div class="bilingual-pair"><p class="src">4, 5, 8</p><p class="dst">4、5、8</p></div>
+
+<div class="bilingual-pair"><p class="src">Transparent file-based</p><p class="dst">透明的基于文件的</p></div>
+
+<div class="bilingual-pair"><p class="src">configuration and memory Adaptability, Authority Opaque database, embedding-based retrieval, or user-visible version-controllable files?</p><p class="dst">配置和内存适应性，权威不透明数据库，基于嵌入的检索，还是用户可见的版本可控文件？</p></div>
+
+<div class="bilingual-pair"><p class="src">7</p><p class="dst">7</p></div>
+
+<div class="bilingual-pair"><p class="src">Isolated subagent</p><p class="dst">孤立的subagent</p></div>
+
+<div class="bilingual-pair"><p class="src">boundaries Reliability, Safety, Capability Subagents share the parent’s context and permissions, or operate in isolation?</p><p class="dst">边界 可靠性、安全性、能力 subagent共享父代理的上下文和权限，还是独立运行？</p></div>
+
+<div class="bilingual-pair"><p class="src">8</p><p class="dst">8</p></div>
+
+<div class="bilingual-pair"><p class="src">Graceful recovery and</p><p class="dst">顺利康复并</p></div>
+
+<div class="bilingual-pair"><p class="src">resilience Reliability, Capability Fail hard on errors, or silently recover and reserve human attention for unrecoverable situations?</p><p class="dst">复原力 可靠性、能力 在错误上努力失败，还是默默地恢复并为无法恢复的情况保留人类的注意力？</p></div>
+
+<div class="bilingual-pair"><p class="src">4, 5</p><p class="dst">4, 5</p></div>
+
+<div class="bilingual-pair"><p class="src">hooks, plugins) provides configurability at multiple levels of context cost (Sections 6 and 7). Longitudinal data (McCain et al., 2026) shows that the human-agent relationship evolves: auto-approve rates increase</p><p class="dst">钩子、插件）提供了多个上下文成本级别的可配置性（第 6 节和第 7 节）。纵向数据（McCain 等人，2026）显示人与代理关系的演变：自动批准率增加</p></div>
+
+<pre class="code-block">from approximately 20% at fewer than 50 sessions to over 40% by 750 sessions. This pattern, described as</pre>
+
+<div class="bilingual-pair"><p class="src">autonomy that is “co-constructed by the model, the user, and the product,” means the system is designed for trust trajectories rather than fixed trust states. MCP’s donation to the Linux Foundation’s Agentic AI Foundation (The Linux Foundation, 2025) reflects the ecosystem dimension of this value.</p><p class="dst">“由模型、用户和产品共同构建”的自治意味着系统是针对信任轨迹而不是固定的信任状态而设计的。 MCP 对 Linux 基金会 Agentic AI 基金会（The Linux Foundation，2025）的捐赠反映了这一价值的生态系统维度。</p></div>
+
+<div class="bilingual-pair"><p class="src">2.2</p><p class="dst">2.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Design Principles</p><p class="dst">设计原则</p></div>
+
+<div class="bilingual-pair"><p class="src">These values are operationalized through thirteen design principles, each answering a recurring question that production coding agents must resolve. Table 1 summarizes the principles; subsequent sections (Section 3 to Section 9) trace each through specific implementation choices.</p><p class="dst">这些价值观通过十三个设计原则进行操作，每个原则都回答了生产coding agent必须解决的重复出现的问题。表 1 总结了原则；后续部分（第 3 节到第 9 节）通过具体的实现选择来跟踪每个部分。</p></div>
+
+<div class="bilingual-pair"><p class="src">These principles can be read against three major alternative design families. First, rule-based orchestration:</p><p class="dst">这些原则可以针对三个主要的替代设计系列来解读。首先，基于规则的编排：</p></div>
+
+<div class="bilingual-pair"><p class="src">frameworks such as LangGraph (LangChain, Inc., 2024) encode decision logic as explicit state graphs with typed edges, choosing scaffolding over minimal harness. Second, container-isolated execution: SWE-Agent and OpenHands (Yang et al., 2024; Wang et al., 2024b) rely on Docker isolation rather than layered policy enforcement. Third, version-control-as-safety: tools like Aider (Gauthier, 2024) use Git rollback as the primary 4 User Agent Loop Interfaces Permission System Tools State &amp; Persistence Execution Environment Prompt Command/ Task Request Progress Allow/Ask/Deny Tool Result Files/Shell/Web/MCP Load Persist Propose Action Figure 1 High-level system structure of Claude Code. The system decomposes into seven functional components: user, interfaces, the agent loop, a permission system, tools, state &amp; persistence, and an execution environment. All entry surfaces converge on the same agent loop.</p><p class="dst">LangGraph（LangChain，Inc.，2024）等框架将决策逻辑编码为具有类型化边缘的显式状态图，选择脚手架而不是最小harness。其次，容器隔离执行：SWE-Agent 和 OpenHands（Yang 等人，2024；Wang 等人，2024b）依赖于 Docker 隔离而不是分层策略执行。第三，版本控制即安全：Aider（Gauthier，2024）等工具使用 Git 回滚作为主要 4 个用户代理循环接口 权限系统工具 状态和持久性 执行环境 提示命令/任务请求进度 允许/询问/拒绝工具 结果文件/Shell/Web/MCP 加载持久建议操作 图 1 Claude 代码的高级系统结构。该系统分为七个功能组件：用户、接口、代理循环、权限系统、工具、状态和持久性以及执行环境。所有入口表面汇聚在同一个代理环路上。</p></div>
+
+<div class="bilingual-pair"><p class="src">safety mechanism rather than deny-first evaluation. Claude Code’s principle set is distinctive in combining minimal decision scaffolding with layered policy enforcement, values-based judgment with deny-first defaults, and progressive context management with composable extensibility.</p><p class="dst">安全机制而不是拒绝优先评估。 Claude Code 的原则集的独特之处在于将最小的决策框架与分层策略执行、基于价值的判断与拒绝优先默认值以及渐进式上下文管理与可组合的可扩展性相结合。</p></div>
+
+<div class="bilingual-pair"><p class="src">2.3</p><p class="dst">2.3</p></div>
+
+<div class="bilingual-pair"><p class="src">From Values to Architecture</p><p class="dst">从价值观到架构</p></div>
+
+<div class="bilingual-pair"><p class="src">Each value traces through its principles to specific architectural decisions:</p><p class="dst">每个值都通过其原则追溯到特定的架构决策：</p></div>
+
+<div class="bilingual-pair"><p class="src">• Human Decision Authority motivates deny-first evaluation, the graduated trust spectrum, append-only state (auditable history), externalized programmable policy, and values-over-rules (Sections 5 to 7 and 9).</p><p class="dst">• 人类决策权威促进拒绝优先评估、分级信任谱、仅附加状态（可审计历史记录）、外部化可编程策略以及价值高于规则（第 5 至 7 和 9 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Safety, Security, and Privacy motivates defense in depth, deny-first defaults, reversibility-weighted assessment, externalized policy, and isolated subagent boundaries (Sections 5 and 8).</p><p class="dst">• 安全、安保和隐私激发深度防御、拒绝优先默认值、可逆性加权评估、外部化策略和隔离的subagent边界（第 5 节和第 8 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Reliable Execution motivates context-as-scarce-resource, append-only durable state, graceful recovery, isolated subagent boundaries, and defense in depth (Sections 4 and 7 to 9).</p><p class="dst">• 可靠执行促进上下文作为稀缺资源、仅附加持久状态、优雅恢复、隔离subagent边界以及深度防御（第 4 节和第 7 至 9 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Capability Amplification motivates minimal scaffolding, composable extensibility, reversibility-weighted risk, context management, and graceful recovery (Sections 4 to 6).</p><p class="dst">• 能力放大促进最小的脚手架、可组合的可扩展性、可逆性加权风险、上下文管理和优雅的恢复（第 4 节到第 6 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Contextual Adaptability motivates transparent file-based memory, composable extensibility, the graduated trust spectrum, and externalized programmable policy (Sections 5 to 7).</p><p class="dst">• 上下文适应性激发透明的基于文件的内存、可组合的可扩展性、分级信任范围和外部化的可编程策略（第 5 节到第 7 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">These mappings also reveal what the architecture does not do: it does not impose explicit planning graphs on the model’s reasoning, does not provide a single unified extension mechanism, and does not restore all session-scoped trust-related state across resume. These absences are consistent with the principle set above.</p><p class="dst">这些映射还揭示了该架构不做什么：它不会对模型的推理强加显式的规划图，不提供单一的统一扩展机制，并且不会跨恢复恢复所有会话范围的信任相关状态。这些缺席与上述原则是一致的。</p></div>
+
+<div class="bilingual-pair"><p class="src">2.4</p><p class="dst">2.4</p></div>
+
+<div class="bilingual-pair"><p class="src">A Cross-Cutting Question: Long-term Developer Capability</p><p class="dst">一个交叉问题：长期开发人员能力</p></div>
+
+<div class="bilingual-pair"><p class="src">The five values above describe what the architecture is designed to serve. This paper also asks a sixth question: whether the architecture helps developers preserve long-term understanding and capability. This concern is real: Anthropic’s own study of 132 engineers and researchers (Huang et al., 2025) documents a “paradox of supervision” in which overreliance on AI risks atrophying the skills needed to supervise it, and independent research (Shen and Tamkin, 2026) finds that developers in AI-assisted conditions score 17% lower on comprehension tests. However, this concern is not prominently reflected as a design driver in the architecture or in Anthropic’s stated design values. We therefore treat it not as a co-equal value but as a cross-cutting concern: a question applied across all five values in Section 12, asking whether short-term amplification costs long-term human understanding, codebase coherence, and the developer pipeline.</p><p class="dst">上述五个值描述了架构的设计目的。本文还提出了第六个问题：该架构是否有助于开发人员保持长期的理解和能力。这种担忧是真实的：Anthropic 对 132 名工程师和研究人员的研究（Huang 等人，2025）记录了一个“监督悖论”，其中过度依赖人工智能可能会削弱监督所需的技能，而独立研究（Shen 和 Tamkin，2026）发现，在人工智能辅助条件下的开发人员在理解测试中的得分降低了 17%。然而，这种担忧并未在架构或 Anthropic 规定的设计价值观中作为设计驱动因素得到突出体现。因此，我们不将其视为同等价值，而是将其视为一个跨领域的关注点：一个适用于第 12 节中所有五个价值的问题，询问短期放大是否会损害长期的人类理解、代码库一致性和开发人员管道。</p></div>
+
+<div class="bilingual-pair"><p class="src">5</p><p class="dst">5</p></div>
+
+<div class="bilingual-pair"><p class="src">3</p><p class="dst">3</p></div>
+
+<div class="bilingual-pair"><p class="src">Architecture Overview</p><p class="dst">架构概述</p></div>
+
+<div class="bilingual-pair"><p class="src">Building a production coding agent requires answering several recurring design questions: where should reasoning live, how many execution engines are needed, what safety posture to adopt, and what resource to treat as the binding constraint. Claude Code’s architecture can be read as one set of answers to these questions. At the implementation level, the system has seven components connected by a main data flow: a user submits a prompt through one of several interfaces, which feeds into a shared agent loop. The agent loop assembles context, calls the Claude model, receives responses that may include tool-use requests, routes those requests through a permission system, and dispatches approved actions to concrete tools that interact with the execution environment. Throughout this process, state and persistence mechanisms record the conversation transcript, manage session identity, and support resume, fork, and rewind operations.</p><p class="dst">构建生产coding agent需要回答几个反复出现的设计问题：推理应该在哪里进行、需要多少个执行引擎、采用什么安全态势以及将什么资源视为绑定约束。 Claude Code 的架构可以被解读为这些问题的一组答案。在实现层面，系统有七个组件通过主数据流连接：用户通过几个接口之一提交提示，该提示馈入共享代理循环。代理循环组装上下文，调用 Claude 模型，接收可能包括工具使用请求的响应，通过权限系统路由这些请求，并将批准的操作分派给与执行环境交互的具体工具。在整个过程中，状态和持久性机制会记录对话记录、管理会话身份并支持恢复、分叉和倒回操作。</p></div>
+
+<div class="bilingual-pair"><p class="src">3.1</p><p class="dst">3.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Design Questions and Running Example</p><p class="dst">设计问题和运行示例</p></div>
+
+<div class="bilingual-pair"><p class="src">The description is organized around four design questions that recur across production coding agents, each grounding one or more of the design principles identified in Table 1. Each question is introduced here with Claude Code’s answer, a note on plausible alternatives, and then demonstrated progressively through Sections 4 to 9.</p><p class="dst">该描述围绕四个设计问题进行组织，这些问题在生产coding agent中重复出现，每个问题都基于表 1 中确定的一个或多个设计原则。这里介绍每个问题以及 Claude Code 的答案，对可行的替代方案进行注释，然后通过第 4 节到第 9 节逐步演示。</p></div>
+
+<div class="bilingual-pair"><p class="src">Where does reasoning live?</p><p class="dst">推理住在哪里？</p></div>
+
+<div class="bilingual-pair"><p class="src">In Claude Code, the model reasons about what to do; the harness is responsible</p><p class="dst">在Claude代码中，模型推理要做什么；harness负责</p></div>
+
+<div class="bilingual-pair"><p class="src">for executing actions. The model emits tool_use blocks as part of its response, and the harness parses them, checks permissions, dispatches them to tool implementations, and collects results (query.ts). The model never directly accesses the filesystem, runs shell commands, or makes network requests. This separation has a security consequence: because reasoning and enforcement occupy separate code paths, a compromised or adversarially manipulated model cannot override the sandboxing, permission checks, or deny-first rules implemented in the harness. The model’s only interface to the outside world is the structured tool_use protocol, which the harness validates before execution. Community analysis of the extracted source estimates that only about 1.6% of Claude Code’s codebase constitutes AI decision logic, with the remaining 98.4% being operational infrastructure, a ratio that illustrates how thin the core agent reasoning layer is. Alternative designs invest more in scaffolding-side reasoning: Devin maintains explicit planning and task-tracking structures, while LangGraph (LangChain, Inc., 2024) routes control flow through developer-defined state graphs.</p><p class="dst">用于执行操作。该模型发出 tool_use 块作为其响应的一部分，harness解析它们、检查权限、将它们分派给工具实现并收集结果 (query.ts)。该模型从不直接访问文件系统、运行 shell 命令或发出网络请求。这种分离会产生安全后果：由于推理和执行占用不同的代码路径，因此受损或敌对操纵的模型无法覆盖harness中实现的沙箱、权限检查或拒绝优先规则。该模型与外界的唯一接口是结构化的 tool_use 协议，harness在执行之前验证该协议。社区对提取的源代码进行分析估计，Claude Code 的代码库中只有约 1.6% 构成了 AI 决策逻辑，其余 98.4% 是运营基础设施，这一比例足以说明核心代理推理层的薄弱程度。替代设计在脚手架端推理上投入更多：Devin 维护明确的规划和任务跟踪结构，而 LangGraph（LangChain，Inc.，2024）通过开发人员定义的状态图路由控制流。</p></div>
+
+<div class="bilingual-pair"><p class="src">How many execution engines?</p><p class="dst">有多少个执行引擎？</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code uses a single queryLoop() function that executes regardless of</p><p class="dst">Claude Code 使用单个 queryLoop() 函数，该函数无论在什么情况下都会执行</p></div>
+
+<div class="bilingual-pair"><p class="src">whether the user is interacting through an interactive terminal, a headless CLI invocation, the Agent SDK, or an IDE integration (query.ts). Only the rendering and user-interaction layer varies. Other systems use mode-specific engines: for example, an IDE integration may follow a different code path than a CLI tool, trading uniformity for surface-specific optimization.</p><p class="dst">用户是否通过交互式终端、无头 CLI 调用、Agent SDK 或 IDE 集成 (query.ts) 进行交互。只有渲染和用户交互层有所不同。其他系统使用特定于模式的引擎：例如，IDE 集成可能遵循与 CLI 工具不同的代码路径，以牺牲统一性来换取特定于表面的优化。</p></div>
+
+<div class="bilingual-pair"><p class="src">What is the default safety posture?</p><p class="dst">默认的安全姿势是什么？</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s default safety posture is deny-first with human escalation:</p><p class="dst">Claude Code 的默认安全态势是“拒绝优先”并进行人为升级：</p></div>
+
+<div class="bilingual-pair"><p class="src">deny rules override ask rules override allow rules, and unrecognized actions are escalated to the user rather than allowed silently (permissions.ts). Multiple independent safety layers (permission rules, PreToolUse hooks, the auto-mode classifier when enabled, and optional shell sandboxing) are stacked, so any one can block an action (Section 5). This combines the deny-first with human escalation and defense in depth with layered mechanisms principles from Table 1. Alternative approaches shift the trust boundary elsewhere: SWE-Agent and OpenHands (Yang et al., 2024; Wang et al., 2024b) rely on container-based isolation to contain arbitrary execution, while Aider (Gauthier, 2024) uses git-based rollback as its primary safety net.</p><p class="dst">拒绝规则覆盖询问规则覆盖允许规则，并且无法识别的操作将升级给用户而不是静默允许（permissions.ts）。多个独立的安全层（权限规则、PreToolUse 挂钩、启用时的自动模式分类器以及可选的 shell 沙箱）堆叠在一起，因此任何一层都可以阻止某个操作（第 5 节）。这将拒绝优先与人为升级和深度防御与表 1 中的分层机制原则相结合。替代方法将信任边界转移到其他地方：SWE-Agent 和 OpenHands（Yang 等人，2024；Wang 等人，2024b）依赖基于容器的隔离来包含任意执行，而 Aider（Gauthier，2024）使用基于 git 的回滚作为其主要安全网。</p></div>
+
+<div class="bilingual-pair"><p class="src">What is the binding resource constraint?</p><p class="dst">什么是绑定资源约束？</p></div>
+
+<div class="bilingual-pair"><p class="src">In Claude Code, the context window (200K for older models, 1M</p><p class="dst">在 Claude Code 中，上下文窗口（旧型号为 200K，1M</p></div>
+
+<div class="bilingual-pair"><p class="src">for the Claude 4.6 series) is the binding resource constraint. Five distinct context-reduction strategies execute before every model call (query.ts), and several other subsystem decisions (lazy loading of instructions, deferred tool schemas, summary-only subagent returns) exist to limit context consumption (Section 7). The five-layer pipeline exists because no single compaction strategy addresses all types of context pressure. Budget reduction targets individual tool outputs that overflow size limits. Snip handles temporal depth. Microcompact reacts to cache overhead. Context collapse manages very long histories. Auto-compact performs semantic compression 6 User Prompt Context Assembly (settings, history) Tool Request Permission Allow Execute -&gt; Result Sync | subagent | background Compact (context pressure) Tool Request Permission Deny Deny Feedback No Tool Use Assistant Response More Iterations Iter 1 Iter 2 Iter N ··· User Reads &amp; Replies Figure 2 Runtime turn flow showing the end-to-end execution of a single agentic turn: user prompt enters through context assembly, the model is called, tool requests pass through the permission gate, tool results feed back into the loop, and compaction manages context pressure.</p><p class="dst">对于 Claude 4.6 系列）是绑定资源约束。在每次模型调用 (query.ts) 之前执行五种不同的上下文缩减策略，并且存在几个其他子系统决策（延迟加载指令、延迟工具模式、仅摘要subagent返回）来限制上下文消耗（第 7 节）。五层管道的存在是因为没有单一的压缩策略可以解决所有类型的上下文压力。预算削减的目标是超出规模限制的单个工具产出。 Snip 处理时间深度。 Microcompact 对缓存开销做出反应。上下文崩溃管理着很长的历史。自动压缩执行语义压缩 6 用户提示上下文组件（设置、历史） 工具请求权限 允许执行 -&gt; 结果同步 |分代理|背景 Compact（上下文压力） 工具请求 权限拒绝 拒绝反馈 无工具使用助手响应 更多迭代 Iter 1 Iter 2 Iter N … 用户读取和回复 图 2 运行时转向流程显示单个代理转向的端到端执行：用户提示通过上下文组装进入，模型被调用，工具请求通过权限门，工具结果反馈到循环中，压缩管理上下文压力。</p></div>
+
+<div class="bilingual-pair"><p class="src">as a last resort. Each layer operates at a different cost-benefit tradeoff, and earlier, cheaper layers run before costlier ones. Alternative architectures treat other resources as the primary bottleneck, for instance compute budget (limiting the number of model calls or tool invocations) or working memory (maintaining an explicit scratchpad rather than relying on the conversation history).</p><p class="dst">作为最后的手段。每个层都以不同的成本效益权衡运行，并且较早、较便宜的层先于较昂贵的层运行。替代架构将其他资源视为主要瓶颈，例如计算预算（限制模型调用或工具调用的数量）或工作内存（维护显式暂存器而不是依赖于对话历史记录）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Running example.</p><p class="dst">运行示例。</p></div>
+
+<div class="bilingual-pair"><p class="src">To ground these principles, we thread a single task through Sections 3 to 9: “Fix the failing test in auth.test.ts.” In this section the user submits the prompt through one of Claude Code’s interfaces.</p><p class="dst">为了落实这些原则，我们在第 3 节到第 9 节中串联了一个任务：“修复 auth.test.ts 中失败的测试。”在本节中，用户通过 Claude Code 的界面之一提交提示。</p></div>
+
+<div class="bilingual-pair"><p class="src">Subsequent sections trace the request through the query loop, permission gate, tool pool, context window, subagent delegation, and session persistence.</p><p class="dst">后续部分通过查询循环、权限门、工具池、上下文窗口、subagent委派和会话持久性来跟踪请求。</p></div>
+
+<div class="bilingual-pair"><p class="src">3.2</p><p class="dst">3.2</p></div>
+
+<div class="bilingual-pair"><p class="src">High-Level System Structure</p><p class="dst">高层系统结构</p></div>
+
+<div class="bilingual-pair"><p class="src">The seven-component model (Figure 1) maps directly to source files:</p><p class="dst">七组件模型（图 1）直接映射到源文件：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. User: Submits prompts, approves permissions, reviews output.</p><p class="dst">1. 用户：提交提示、批准权限、审查输出。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Interfaces: Interactive CLI, headless CLI (claude -p), Agent SDK, and IDE/Desktop/Browser. All surfaces feed the same loop.</p><p class="dst">2. 接口：交互式 CLI、无头 CLI (claude -p)、Agent SDK 和 IDE/桌面/浏览器。所有表面都馈送相同的循环。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Agent loop: The iterative cycle of model call, tool dispatch, and result collection, implemented as the queryLoop() async generator in query.ts.</p><p class="dst">3. 代理循环：模型调用、工具调度和结果收集的迭代循环，在 query.ts 中实现为 queryLoop() 异步生成器。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Permission system: Deny-first rule evaluation (permissions.ts), the auto-mode ML classifier, and hook-based interception (types/hooks.ts).</p><p class="dst">4. 权限系统：拒绝优先规则评估 (permissions.ts)、自动模式 ML 分类器和基于钩子的拦截 (types/hooks.ts)。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Tools: Up to 54 built-in tools (19 unconditional, 35 conditional on feature flags and user type) assembled via assembleToolPool() (tools.ts), merged with MCP-provided tools. Plugins contribute indirectly through MCP servers and the skill/command registry.</p><p class="dst">5. 工具：通过 assembleToolPool() (tools.ts) 组装多达 54 个内置工具（19 个无条件工具，35 个基于功能标志和用户类型的条件工具），并与 MCP 提供的工具合并。插件通过 MCP 服务器和技能/命令注册表间接贡献。</p></div>
+
+<div class="bilingual-pair"><p class="src">6. State &amp; persistence: Mostly append-only JSONL session transcripts (sessionStorage.ts), global prompt history (history.ts), and subagent sidechain files.</p><p class="dst">6. 状态和持久性：主要是仅附加 JSONL 会话记录 (sessionStorage.ts)、全局提示历史记录 (history.ts) 和subagent侧链文件。</p></div>
+
+<div class="bilingual-pair"><p class="src">7</p><p class="dst">7</p></div>
+
+<div class="bilingual-pair"><p class="src">Interactive</p><p class="dst">互动</p></div>
+
+<div class="bilingual-pair"><p class="src">CLI</p><p class="dst">命令行界面</p></div>
+
+<div class="bilingual-pair"><p class="src">UI/</p><p class="dst">用户界面/</p></div>
+
+<div class="bilingual-pair"><p class="src">Render</p><p class="dst">渲染</p></div>
+
+<div class="bilingual-pair"><p class="src">Surface Layer</p><p class="dst">表层</p></div>
+
+<div class="bilingual-pair"><p class="src">IDE/Desktop</p><p class="dst">集成开发环境/桌面</p></div>
+
+<pre class="code-block">/Browser</pre>
+
+<div class="bilingual-pair"><p class="src">Headless CLI</p><p class="dst">无头 CLI</p></div>
+
+<div class="bilingual-pair"><p class="src">Agent SDK</p><p class="dst">代理SDK</p></div>
+
+<div class="bilingual-pair"><p class="src">Core Layer</p><p class="dst">核心层</p></div>
+
+<div class="bilingual-pair"><p class="src">Agent Loop</p><p class="dst">代理循环</p></div>
+
+<div class="bilingual-pair"><p class="src">Compaction</p><p class="dst">压实</p></div>
+
+<div class="bilingual-pair"><p class="src">Pipeline</p><p class="dst">管道</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety / Action Layer</p><p class="dst">安全/行动层</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission</p><p class="dst">许可</p></div>
+
+<div class="bilingual-pair"><p class="src">System</p><p class="dst">系统</p></div>
+
+<div class="bilingual-pair"><p class="src">+ auto classifier Hook Pipeline Extensibility (plugins &amp; skills) Built-in Tools MCP Tools Subagent spawning Shell sandbox Backend Layer Execution Backends External Resources State Layer Context Assembly Runtime State Session Persistence CLAUDE.md + memory Sidechain Transcripts submit/ interrupt output/ progress pre-model shapers compacted context tool request lifecycle events modify decision Y/N Y/N Y/N approval shell commands local/ cloud/ remote tool surface response text sandboxed execution system prompt mutate state transcript Resume/fork subagent transcript headless request programmatic query invoke skills Figure 3 Expanded layered architecture showing five subsystem layers: surface (Interactive CLI, Headless CLI, Agent SDK, IDE/Desktop/Browser, UI/renderer), core (agent loop, compaction pipeline), safety/action (permission system incl. auto-mode classifier, hook pipeline, extensibility, built-in tools, MCP tools, shell sandbox, subagent spawning), state (context assembly, runtime state, session persistence, CLAUDE.md + memory, sidechain transcripts), and backend (execution backends, external resources).</p><p class="dst">+ 自动分类器 Hook 管道 可扩展性（插件和技能） 内置工具 MCP 工具 subagent生成 Shell 沙箱 后端层执行后端 外部资源 状态层上下文组装 运行时状态会话持久性 CLAUDE.md + 内存 侧链脚本 提交/中断输出/进度 预模型成形器 压缩上下文工具 请求生命周期事件 修改决策 Y/N Y/N Y/N 批准 shell 命令 本地/云/远程工具表面响应文本 沙盒执行系统提示 mutate 状态记录 Resume/fork subagent记录 无头请求 编程查询 调用技能 图 3 扩展分层架构，显示五个子系统层：表面（交互式 CLI、无头 CLI、Agent SDK、IDE/桌面/浏览器、UI/渲染器）、核心（代理循环、压缩管道）、安全/操作（权限系统，包括自动模式分类器、钩子管道、可扩展性、内置工具、MCP 工具、shell 沙箱、subagent生成）、状态（上下文组装、运行时状态、会话持久性、CLAUDE.md + 内存、侧链转录）和后端（执行后端、外部资源）。</p></div>
+
+<div class="bilingual-pair"><p class="src">7. Execution environment: Shell execution with optional sandboxing (shouldUseSandbox.ts), filesystem operations, web fetching, MCP server connections, and remote execution.</p><p class="dst">7. 执行环境：带有可选沙箱（shouldUseSandbox.ts）的 Shell 执行、文件系统操作、Web 获取、MCP 服务器连接和远程执行。</p></div>
+
+<div class="bilingual-pair"><p class="src">The data flow follows a left-to-right spine: the user submits a request through an interface, which enters the agent loop. The loop proposes actions to the permission system; approved actions reach tools, which interact with the execution environment and return tool_result messages back to the loop. State and persistence sit alongside the loop, recording transcripts and loading prior session data.</p><p class="dst">数据流遵循从左到右的主干：用户通过接口提交请求，该请求进入代理循环。该循环向权限系统提出操作建议；批准的操作到达工具，工具与执行环境交互并将 tool_result 消息返回到循环。状态和持久性位于循环旁边，记录转录并加载先前的会话数据。</p></div>
+
+<div class="bilingual-pair"><p class="src">The application entry point main() in main.tsx initializes security settings (including NoDefaultCurrentDi- rectoryInExePath to prevent Windows PATH hijacking), registers signal handlers for graceful shutdown, and dispatches to the appropriate execution mode.</p><p class="dst">main.tsx 中的应用程序入口点 main() 初始化安全设置（包括 NoDefaultCurrentDirectoryInExePath 以防止 Windows PATH 劫持）、注册信号处理程序以正常关闭，并分派到适当的执行模式。</p></div>
+
+<div class="bilingual-pair"><p class="src">3.3</p><p class="dst">3.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Layered Subsystem Decomposition</p><p class="dst">分层子系统分解</p></div>
+
+<div class="bilingual-pair"><p class="src">The five-layer decomposition (Figure 3) expands the seven-component model into a finer-grained view, mapping each layer to specific source directories.</p><p class="dst">五层分解（图 3）将七组件模型扩展为更细粒度的视图，将每一层映射到特定的源目录。</p></div>
+
+<div class="bilingual-pair"><p class="src">Surface layer (entry points and rendering).</p><p class="dst">表面层（入口点和渲染）。</p></div>
+
+<div class="bilingual-pair"><p class="src">The src/entrypoints/ directory contains startup paths, including</p><p class="dst">src/entrypoints/目录包含启动路径，包括</p></div>
+
+<div class="bilingual-pair"><p class="src">the SDK entry with coreTypes.ts, controlSchemas.ts, and coreSchemas.ts. The src/screens/ directory composes full-screen layouts, and src/components/ provides terminal UI building blocks via the ink framework.</p><p class="dst">SDK 条目包含 coreTypes.ts、controlSchemas.ts 和 coreSchemas.ts。 src/screens/ 目录组成全屏布局，src/components/ 通过 ink 框架提供终端 UI 构建块。</p></div>
+
+<div class="bilingual-pair"><p class="src">The interactive CLI launches a terminal UI with real-time streaming, permission dialogs, and progress indicators.</p><p class="dst">交互式 CLI 启动带有实时流、权限对话框和进度指示器的终端 UI。</p></div>
+
+<div class="bilingual-pair"><p class="src">The headless CLI (claude -p) creates a QueryEngine instance, a thin conversation wrapper around the shared query path (Section 3.4), for single-shot processing. The Agent SDK emits typed events via async generators.</p><p class="dst">无头 CLI (claude -p) 创建一个 QueryEngine 实例，这是一个围绕共享查询路径（第 3.4 节）的瘦对话包装器，用于单次处理。 Agent SDK 通过异步生成器发出类型化事件。</p></div>
+
+<div class="bilingual-pair"><p class="src">Core layer (agent loop, compaction pipeline).</p><p class="dst">核心层（代理循环、压缩管道）。</p></div>
+
+<div class="bilingual-pair"><p class="src">The queryLoop() async generator (query.ts) implements the</p><p class="dst">queryLoop() 异步生成器 (query.ts) 实现</p></div>
+
+<div class="bilingual-pair"><p class="src">iterative agent loop, consuming assembled context from the state layer and dispatching tool requests to the safety/action layer. Before every model call, a compaction pipeline of five sequential shapers (query.ts:365- 453) manages context pressure: budget reduction, snip, microcompact, context collapse, and auto-compact (Sections 4.3 and 7.3).</p><p class="dst">迭代代理循环，使用来自状态层的组装上下文并将工具请求分派到安全/操作层。在每次模型调用之前，由五个顺序整形器 (query.ts:365-453) 组成的压缩管道会管理上下文压力：预算缩减、剪切、微压缩、上下文折叠和自动压缩（第 4.3 节和第 7.3 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety/action layer (permission system, hooks, extensibility, tools, sandbox, subagents).</p><p class="dst">安全/操作层（权限系统、挂钩、可扩展性、工具、沙箱、subagent）。</p></div>
+
+<div class="bilingual-pair"><p class="src">The permission</p><p class="dst">许可</p></div>
+
+<div class="bilingual-pair"><p class="src">system (permissions.ts) implements deny-first rule evaluation with up to seven permission modes (if also counting internal-only bubble and feature-gated auto) (types/permissions.ts) and an integrated auto-mode ML classifier (yoloClassifier.ts) that provides a two-stage fast-filter and chain-of-thought evaluation of tool 8 safety (Section 5). A hook pipeline spanning 27 event types (coreTypes.ts; output schemas in types/hooks.ts) can block, rewrite, or annotate tool requests; of these, 5 are safety-related while the remaining 22 serve lifecycle and orchestration purposes (Section 6). An extensibility subsystem allows plugins and skills to register tools and hooks into the runtime. Tool pool assembly via assembleToolPool() (tools.ts) merges built-in and MCP-provided tools. Approved shell commands pass through a shell sandbox (shouldUseSandbox.ts) that restricts filesystem and network access independently of the permission system. Subagent spawning via AgentTool (AgentTool.tsx, runAgent.ts) is dispatched through the same buildTool() factory as all other tools, re-entering the queryLoop() with an isolated context window and returning only a summary to the parent (Section 8).</p><p class="dst">系统 (permissions.ts) 实现拒绝优先规则评估，具有最多七种权限模式（如果还计算内部专用气泡和功能门控自动）(types/permissions.ts) 和集成自动模式 ML 分类器 (yoloClassifier.ts)，该分类器提供工具 8 安全性的两阶段快速过滤和思想链评估（第 5 节）。跨越 27 种事件类型（coreTypes.ts；types/hooks.ts 中的输出模式）的钩子管道可以阻止、重写或注释工具请求；其中，5 个与安全相关，其余 22 个用于生命周期和编排目的（第 6 节）。可扩展性子系统允许插件和技能将工具和挂钩注册到运行时中。通过 assembleToolPool() (tools.ts) 进行的工具池组装合并了内置工具和 MCP 提供的工具。批准的 shell 命令通过 shell 沙箱 (shouldUseSandbox.ts)，该沙箱独立于权限系统限制文件系统和网络访问。通过 AgentTool（AgentTool.tsx、runAgent.ts）生成的subagent与所有其他工具一样通过相同的 buildTool() 工厂进行调度，使用隔离的上下文窗口重新进入 queryLoop() 并仅将摘要返回给父级（第 8 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">State layer (context assembly, runtime state, persistence, memory, sidechains).</p><p class="dst">状态层（上下文组装、运行时状态、持久性、内存、侧链）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Context assembly is a</p><p class="dst">上下文组件是一个</p></div>
+
+<div class="bilingual-pair"><p class="src">memoized state loader, not a routing hub: getSystemContext() (context.ts) computes session-level system context including git status, and getUserContext() (context.ts) loads the CLAUDE.md hierarchy and current date. Both are cached for reuse: system context is appended to the system prompt, while user context is added as a user-context message. The src/state/ directory manages runtime application state.</p><p class="dst">记忆状态加载器，而不是路由集线器： getSystemContext() (context.ts) 计算会话级系统上下文，包括 git status，而 getUserContext() (context.ts) 加载 CLAUDE.md 层次结构和当前日期。两者都被缓存以供重用：系统上下文附加到系统提示符中，而用户上下文则作为用户上下文消息添加。 src/state/ 目录管理运行时应用程序状态。</p></div>
+
+<div class="bilingual-pair"><p class="src">Session transcripts are stored as mostly append-only JSONL files at project-specific paths (sessionStorage.ts).</p><p class="dst">会话记录主要以仅附加 JSONL 文件的形式存储在项目特定路径 (sessionStorage.ts) 中。</p></div>
+
+<div class="bilingual-pair"><p class="src">The CLAUDE.md + memory subsystem provides a four-level instruction hierarchy (claudemd.ts) from managed settings to directory-specific files, plus auto-memory entries that Claude writes during conversations (Section 7.2). Sidechain transcripts (sessionStorage.ts:247) store each subagent’s conversation in a separate file, preventing subagent content from inflating the parent context (Section 8.3). Global prompt history is maintained in history.jsonl (history.ts). Resume and fork operations reconstruct session state from transcripts (conversationRecovery.ts).</p><p class="dst">CLAUDE.md + 内存子系统提供了从托管设置到特定于目录的文件的四级指令层次结构 (claudemd.ts)，以及 Claude 在对话期间写入的自动内存条目（第 7.2 节）。侧链转录本 (sessionStorage.ts:247) 将每个subagent的对话存储在单独的文件中，防止subagent内容膨胀父上下文（第 8.3 节）。全局提示历史记录保存在history.jsonl (history.ts) 中。恢复和分叉操作从记录中重建会话状态 (conversationRecovery.ts)。</p></div>
+
+<div class="bilingual-pair"><p class="src">Backend layer (execution backends, external resources).</p><p class="dst">后端层（执行后端、外部资源）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Shell command execution with optional sandboxing</p><p class="dst">使用可选沙箱执行 Shell 命令</p></div>
+
+<div class="bilingual-pair"><p class="src">(BashTool.tsx, PowerShellTool.tsx), remote execution support (src/remote/), MCP server connections across multiple transport variants including stdio, SSE, HTTP, WebSocket, SDK, and IDE-specific adapters (services/mcp/client.ts), and 42 tool subdirectories in src/tools/ implement concrete tool logic.</p><p class="dst">（BashTool.tsx、PowerShellTool.tsx）、远程执行支持（src/remote/）、跨多种传输变体（包括 stdio、SSE、HTTP、WebSocket、SDK 和 IDE 特定适配器（services/mcp/client.ts））的 MCP 服务器连接，以及 src/tools/ 中的 42 个工具子目录实现具体工具逻辑。</p></div>
+
+<div class="bilingual-pair"><p class="src">3.4</p><p class="dst">3.4</p></div>
+
+<div class="bilingual-pair"><p class="src">QueryEngine: A Clarification</p><p class="dst">QueryEngine：澄清</p></div>
+
+<div class="bilingual-pair"><p class="src">The class documentation at QueryEngine.ts states: “QueryEngine owns the query lifecycle and session state for a conversation. It extracts the core logic from ask() into a standalone class that can be used by both the headless/SDK path and (in a future phase) the REPL.” The class is a conversation wrapper for non-interactive surfaces, not the engine itself. Its constructor accepts a QueryEngineConfig with initial messages, an abort controller, a file-state cache, and other per-conversation state. Its submitMessage() method is an async generator that orchestrates a single turn. The shared query path lives in query() (query.ts), which wraps an internal queryLoop(); QueryEngine delegates to query().</p><p class="dst">QueryEngine.ts 的类文档指出：“QueryEngine 拥有对话的查询生命周期和会话状态。它将核心逻辑从 Ask() 提取到一个独立的类中，该类可以由 headless/SDK 路径和（在未来阶段）REPL 使用。”该类是非交互式表面的对话包装器，而不是引擎本身。它的构造函数接受带有初始消息的 QueryEngineConfig、中止控制器、文件状态缓存和其他每个会话状态。它的submitMessage()方法是一个异步生成器，可以编排单个回合。共享查询路径位于 query() (query.ts) 中，它包装了一个内部 queryLoop()； QueryEngine 委托给 query()。</p></div>
+
+<div class="bilingual-pair"><p class="src">This distinction matters architecturally: the interactive CLI also calls query(), bypassing QueryEngine entirely. The shared code path is the loop function, not the engine class.</p><p class="dst">这种区别在架构上很重要：交互式 CLI 还调用 query()，完全绕过 QueryEngine。共享代码路径是循环函数，而不是引擎类。</p></div>
+
+<div class="bilingual-pair"><p class="src">3.5</p><p class="dst">3.5</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission and Safety Layers</p><p class="dst">权限和安全层</p></div>
+
+<div class="bilingual-pair"><p class="src">The safety-by-default principle is implemented through seven independent layers. A request must pass through all applicable layers, and any single layer can block it:</p><p class="dst">默认安全原则是通过七个独立层实现的。请求必须通过所有适用的层，任何单个层都可以阻止它：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Tool pre-filtering (tools.ts): Blanket-denied tools are removed from the model’s view before any call, preventing the model from attempting to invoke them.</p><p class="dst">1. 工具预过滤（tools.ts）：在任何调用之前，被拒绝的工具都会从模型的视图中删除，从而防止模型尝试调用它们。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Deny-first rule evaluation (permissions.ts): Deny rules always take precedence over allow rules, even when the allow rule is more specific.</p><p class="dst">2. 拒绝优先规则评估 (permissions.ts)：即使允许规则更具体，拒绝规则始终优先于允许规则。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Permission mode constraints (types/permissions.ts): The active mode determines baseline handling for requests matching no explicit rule.</p><p class="dst">3. 权限模式约束（types/permissions.ts）：主动模式确定对未匹配显式规则的请求的基线处理。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Auto-mode classifier: In auto mode, an ML-based classifier can evaluate requests still requiring approval after rule evaluation and fast-path checks; selected allow rules that would bypass it (e.g., Bash(*)) are set aside while auto mode is active.</p><p class="dst">4. 自动模式分类器：在自动模式下，基于机器学习的分类器可以评估规则评估和快速路径检查后仍需要批准的请求；当自动模式处于活动状态时，选定的允许绕过它的规则（例如 Bash(*)）将被搁置。</p></div>
+
+<div class="bilingual-pair"><p class="src">9</p><p class="dst">9</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Shell sandboxing (shouldUseSandbox.ts): Approved shell commands may still execute inside a sandbox restricting filesystem and network access.</p><p class="dst">5. Shell 沙箱 (shouldUseSandbox.ts)：批准的 shell 命令仍可以在限制文件系统和网络访问的沙箱内执行。</p></div>
+
+<div class="bilingual-pair"><p class="src">6. Not restoring permissions on resume (conversationRecovery.ts): Session-scoped permissions are not stored in the transcript, so a session resumed in a new process starts without them.</p><p class="dst">6. 不恢复恢复权限 (conversationRecovery.ts)：会话范围的权限不会存储在记录中，因此在新进程中恢复的会话在没有这些权限的情况下启动。</p></div>
+
+<div class="bilingual-pair"><p class="src">7. Hook-based interception (types/hooks.ts): PreToolUse hooks can modify permission decisions; Per- missionRequest hooks can resolve decisions asynchronously alongside the user dialog (or before it, in coordinator mode).</p><p class="dst">7.基于Hook的拦截（types/hooks.ts）：PreToolUse钩子可以修改权限决策； PermissionRequest 挂钩可以与用户对话框一起异步解决决策（或在协调器模式下在其之前）。</p></div>
+
+<div class="bilingual-pair"><p class="src">These layers are described in detail in Section 5.</p><p class="dst">这些层在第 5 节中详细描述。</p></div>
+
+<div class="bilingual-pair"><p class="src">3.6</p><p class="dst">3.6</p></div>
+
+<div class="bilingual-pair"><p class="src">Context as Bottleneck: Beyond Compaction</p><p class="dst">上下文作为瓶颈：超越压缩</p></div>
+
+<div class="bilingual-pair"><p class="src">Beyond the five-layer compaction pipeline (detailed in Section 7), several other subsystem decisions reflect the context-as-bottleneck constraint:</p><p class="dst">除了五层压缩管道（第 7 节中详细介绍）之外，其他几个子系统决策也反映了上下文瓶颈约束：</p></div>
+
+<div class="bilingual-pair"><p class="src">• CLAUDE.md lazy loading: The base CLAUDE.md hierarchy is loaded at session start, but additional nested-directory instruction files and conditional rules are loaded only when the agent reads files in those directories, preventing unused instructions from consuming context.</p><p class="dst">• CLAUDE.md 延迟加载：基本 CLAUDE.md 层次结构在会话启动时加载，但仅当代理读取这些目录中的文件时才加载其他嵌套目录指令文件和条件规则，从而防止未使用的指令消耗上下文。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Deferred tool schemas: When ToolSearch is enabled, some tools include only their names in the initial context; full schemas are loaded on demand.</p><p class="dst">• 延迟工具架构：当启用ToolSearch 时，某些工具仅在初始上下文中包含其名称。完整模式按需加载。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Subagent summary-only return: Subagents return only summary text to the parent, not their full conversation history (Section 8).</p><p class="dst">• 仅返回subagent摘要：subagent仅向父代理返回摘要文本，而不返回完整的对话历史记录（第 8 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Per-tool-result budget: Individual tool results are capped at a configurable size, preventing a single verbose output from consuming disproportionate context.</p><p class="dst">• 每个工具结果的预算：单个工具结果的上限为可配置的大小，以防止单个详细输出消耗不成比例的上下文。</p></div>
+
+<div class="bilingual-pair"><p class="src">4</p><p class="dst">4</p></div>
+
+<div class="bilingual-pair"><p class="src">Turn Execution: The Agentic Query Loop</p><p class="dst">轮次执行：代理查询循环</p></div>
+
+<div class="bilingual-pair"><p class="src">When the user submits “Fix the failing test in auth.test.ts,” the input enters a reactive loop, one of several possible orchestration patterns for coding agents. This section examines Claude Code’s choice of a simple while-loop architecture and traces one turn of that loop end-to-end, illustrating three design principles from Table 1: minimal scaffolding with maximal operational harness, context as scarce resource with progressive management, and graceful recovery and resilience.</p><p class="dst">当用户提交“修复 auth.test.ts 中的失败测试”时，输入进入反应循环，这是coding agent的几种可能的编排模式之一。本节研究 Claude Code 对简单 while 循环架构的选择，并端到端地跟踪该循环的一圈，说明表 1 中的三个设计原则：具有最大操作harness的最小脚手架、具有渐进式管理的稀缺资源上下文以及优雅的恢复和弹性。</p></div>
+
+<div class="bilingual-pair"><p class="src">4.1</p><p class="dst">4.1</p></div>
+
+<div class="bilingual-pair"><p class="src">The Query Pipeline</p><p class="dst">查询管道</p></div>
+
+<div class="bilingual-pair"><p class="src">Each turn follows a fixed sequence (Figure 2, query.ts):</p><p class="dst">每个回合都遵循固定的顺序（图 2，query.ts）：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Settings resolution. The queryLoop() function destructures immutable parameters including the system prompt, user context, permission callback, and model configuration.</p><p class="dst">1. 设置分辨率。 queryLoop() 函数解构不可变参数，包括系统提示、用户上下文、权限回调和模型配置。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Mutable state initialization. A single State object stores all mutable state across iterations, including messages, tool context, compaction tracking, and recovery counters. The loop’s seven continue points (the “continue sites”) each overwrite this object in one whole-object assignment rather than mutating fields individually.</p><p class="dst">2. 可变状态初始化。单个 State 对象存储迭代中的所有可变状态，包括消息、工具上下文、压缩跟踪和恢复计数器。循环的七个继续点（“继续站点”）每个都在一个整体对象分配中覆盖该对象，而不是单独改变字段。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Context assembly. The function getMessagesAfterCompactBoundary() retrieves messages from the last compact boundary forward, ensuring that compacted content is represented by its summary rather than the original messages.</p><p class="dst">3. 上下文组装。函数 getMessagesAfterCompactBoundary() 从最后一个压缩边界向前检索消息，确保压缩内容由其摘要而不是原始消息表示。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Pre-model context shapers. Five shapers execute sequentially (Section 4.3).</p><p class="dst">4. 预建模环境塑造者。五个整形器按顺序执行（第 4.3 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Model call. A for await loop over deps.callModel() streams the model’s response, passing assembled messages (with user context prepended), the full system prompt, thinking configuration, the available tool set, an abort signal, the current model specification, and additional options including fast-mode settings, effort value, and fallback model.</p><p class="dst">5.模型调用。 deps.callModel() 上的 for wait 循环流式传输模型的响应，传递组装的消息（前置用户上下文）、完整的系统提示、思考配置、可用的工具集、中止信号、当前模型规范以及其他选项，包括快速模式设置、工作量值和回退模型。</p></div>
+
+<div class="bilingual-pair"><p class="src">6. Tool-use dispatch. If the response contains tool_use blocks, they flow to the tool orchestration layer (Section 4.2).</p><p class="dst">6、工具使用调度。如果响应包含 tool_use 块，它们将流向工具编排层（第 4.2 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">7. Permission gate. Each tool request passes through the permission system (Section 5).</p><p class="dst">7. 许可门。每个工具请求都会经过权限系统（第 5 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">8. Tool execution and result collection. Tool results are added to the conversation as tool_result messages, and the loop continues.</p><p class="dst">8. 工具执行和结果收集。工具结果将作为 tool_result 消息添加到对话中，然后循环继续。</p></div>
+
+<div class="bilingual-pair"><p class="src">10</p><p class="dst">10</p></div>
+
+<div class="bilingual-pair"><p class="src">9. Stop condition. If the response contains no tool_use blocks (text only), the turn is complete.</p><p class="dst">9. 停止条件。如果响应不包含 tool_use 块（仅限文本），则回合完成。</p></div>
+
+<div class="bilingual-pair"><p class="src">The queryLoop() function is defined as an AsyncGenerator, yielding StreamEvent, RequestStartEvent, Message, TombstoneMessage, and ToolUseSummaryMessage events as it progresses. This generator-based design enables streaming output to the UI layer while maintaining a single synchronous control flow within the loop.</p><p class="dst">queryLoop() 函数被定义为 AsyncGenerator，在运行时产生 StreamEvent、RequestStartEvent、Message、TombstoneMessage 和 ToolUseSummaryMessage 事件。这种基于生成器的设计可以将流式输出输出到 UI 层，同时在循环内保持单个同步控制流。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s reactive loop follows the ReAct pattern (Yao et al., 2022): the model generates reasoning and tool invocations, the harness executes actions, and results feed the next iteration. Alternative orchestration patterns include explicit graph-based routing (LangChain, Inc., 2024), where control flow is defined as a state machine with typed edges, and tree-search methods (Zhou et al., 2023) that explore multiple action trajectories before committing. Anthropic’s own documentation (Schluntz and Zhang, 2024) identifies five composable workflow patterns (prompt chaining, routing, parallelization, orchestrator-workers, and evaluator-optimizer) of which Claude Code primarily uses the orchestrator-workers pattern for subagent delegation (Section 8) while keeping the core loop reactive. The reactive design trades search completeness for simplicity and latency:</p><p class="dst">Claude Code 的反应式循环遵循 ReAct 模式（Yao 等人，2022）：模型生成推理和工具调用，harness执行操作，并将结果提供给下一次迭代。替代编排模式包括显式的基于图的路由（LangChain, Inc., 2024），其中控制流被定义为具有类型化边缘的状态机，以及在提交之前探索多个操作轨迹的树搜索方法（Zhou et al., 2023）。 Anthropic 自己的文档（Schluntz 和Zhang，2024）确定了五种可组合的工作流模式（提示链、路由、并行化、编排器工作人员和评估器优化器），其中 Claude Code 主要使用编排工作人员模式进行subagent委托（第 8 节），同时保持核心循环反应性。响应式设计以搜索完整性为代价换取简单性和延迟：</p></div>
+
+<div class="bilingual-pair"><p class="src">each turn commits to one action sequence without backtracking.</p><p class="dst">每一回合都会执行一个动作序列而不会回溯。</p></div>
+
+<div class="bilingual-pair"><p class="src">4.2</p><p class="dst">4.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Tool Dispatch and Streaming Execution</p><p class="dst">工具调度和流式执行</p></div>
+
+<div class="bilingual-pair"><p class="src">When the model response contains tool_use blocks, the system chooses between two execution paths. The primary path uses StreamingToolExecutor, which begins executing tools as they stream in from the model response, reducing latency for multi-tool responses. The fallback path uses runTools() in toolOrchestration.ts, which iterates over partitions produced by partitionToolCalls(). Both paths classify tools as concurrent-safe or exclusive. Read-only operations can execute in parallel, while state-modifying operations like shell commands are serialized.</p><p class="dst">当模型响应包含 tool_use 块时，系统在两个执行路径之间进行选择。主要路径使用 StreamingToolExecutor，它在工具从模型响应流入时开始执行工具，从而减少多工具响应的延迟。后备路径使用 toolOrchestration.ts 中的 runTools()，它迭代由 partitionToolCalls() 生成的分区。这两种路径都将工具分类为并发安全或独占。只读操作可以并行执行，而状态修改操作（例如 shell 命令）是串行执行的。</p></div>
+
+<div class="bilingual-pair"><p class="src">The StreamingToolExecutor (StreamingToolExecutor.ts) manages concurrent execution with two coordina- tion mechanisms:</p><p class="dst">StreamingToolExecutor (StreamingToolExecutor.ts) 通过两种协调机制管理并发执行：</p></div>
+
+<div class="bilingual-pair"><p class="src">• Sibling abort controller. Fires when any Bash tool errors, immediately terminating other in-flight subprocesses rather than letting them run to completion.</p><p class="dst">• 同级中止控制器。当任何 Bash 工具出错时触发，立即终止其他正在进行的子进程而不是让它们运行完成。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Progress-available signal. Wakes up the getRemainingResults() consumer when new output is ready.</p><p class="dst">• 进度可用信号。当新输出准备就绪时唤醒 getRemainingResults() 使用者。</p></div>
+
+<div class="bilingual-pair"><p class="src">Results are buffered so that none is emitted ahead of an earlier non-concurrency-safe tool that is still running; results from concurrency-safe tools running in parallel are emitted as they complete. This concurrent-read, serial-write execution model occupies a middle ground between fully serial dispatch and more aggressive speculative approaches such as PASTE (Sui et al., 2026), which speculatively pre-executes predicted future tool calls while the model is still generating, hiding tool latency through speculation.</p><p class="dst">结果被缓冲，以便在仍在运行的早期非并发安全工具之前不会发出任何结果；并行运行的并发安全工具的结果在完成时发出。这种并发读取、串行写入执行模型占据了完全串行调度和更激进的推测方法（例如 PASTE）（Sui 等人，2026）之间的中间地带，后者在模型仍在生成时推测性地预执行预测的未来工具调用，通过推测隐藏工具延迟。</p></div>
+
+<div class="bilingual-pair"><p class="src">The tool result collection phase iterates over updates from either the streaming executor or the batched runTools() async generator. Both are async iterables consumed by the same for await loop; the contrast is in whether tool execution starts before the model finishes streaming (streaming) or after partitioning into concurrency-safe groups (batched). Each update may carry a tool result, an attachment, or a progress event.</p><p class="dst">工具结果收集阶段迭代来自流式执行器或批处理 runTools() 异步生成器的更新。两者都是由同一个 for wait 循环消耗的异步迭代；对比在于工具执行是在模型完成流式传输（流式传输）之前开始，还是在划分为并发安全组（批处理）之后开始。每个更新可能携带工具结果、附件或进度事件。</p></div>
+
+<div class="bilingual-pair"><p class="src">A special check detects hook_stopped_continuation attachments: if a PostToolUse hook signals that the turn should not continue, a shouldPreventContinuation flag is set. Results are normalized for the Anthropic API via normalizeMessagesForAPI(), filtering to keep only user-type messages.</p><p class="dst">特殊检查会检测 hook_stopped_continuation 附件：如果 PostToolUse 挂钩发出信号表明转弯不应继续，则设置 shouldPreventContinuation 标志。通过 normalizeMessagesForAPI() 对 Anthropic API 的结果进行标准化，过滤以仅保留用户类型的消息。</p></div>
+
+<div class="bilingual-pair"><p class="src">4.3</p><p class="dst">4.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Pre-Model Context Shapers</p><p class="dst">预模型环境塑造者</p></div>
+
+<div class="bilingual-pair"><p class="src">Five context shapers execute sequentially in query.ts before every model call, each operating on the mes- sagesForQuery array. The five shapers run in sequence, with earlier steps applying lighter reductions before later steps apply broader compaction.</p><p class="dst">在每次模型调用之前，五个上下文整形器在 query.ts 中按顺序执行，每个都对 messagesForQuery 数组进行操作。五个整形器按顺序运行，前面的步骤应用较轻的缩减，然后后面的步骤应用更广泛的压缩。</p></div>
+
+<div class="bilingual-pair"><p class="src">Budget reduction.</p><p class="dst">预算减少。</p></div>
+
+<div class="bilingual-pair"><p class="src">(applyToolResultBudget()). Enforces per-message size limits on tool results, replacing oversized outputs with content references. Exempt tools (those where maxResultSizeChars is not finite) retain their full output. Content replacements are persisted for agent and session query sources to enable reconstruction on resume. Budget reduction runs before microcompact because microcompact operates purely by tool_use_id and never inspects content; the two compose cleanly.</p><p class="dst">（应用工具结果预算（））。对工具结果强制执行每条消息的大小限制，用内容引用替换过大的输出。豁免工具（maxResultSizeChars 不是有限的工具）保留其完整输出。代理和会话查询源的内容替换会保留下来，以便在恢复时进行重建。预算缩减在 microcompact 之前运行，因为 microcompact 纯粹通过 tool_use_id 运行并且从不检查内容；两人的组合干净利落。</p></div>
+
+<div class="bilingual-pair"><p class="src">11</p><p class="dst">11</p></div>
+
+<div class="bilingual-pair"><p class="src">Snip.</p><p class="dst">剪断。</p></div>
+
+<div class="bilingual-pair"><p class="src">(snipCompactIfNeeded(), gated by HISTORY_SNIP). A lightweight trim that removes older history segments, returning {messages, tokensFreed, boundaryMessage}. The snipTokensFreed value is plumbed to auto-compact because the main token counter derives context size from the usage field on the most recent assistant message, and that message survives snip with its pre-snip input_tokens still attached; snip’s savings are therefore invisible to the counter unless passed through explicitly.</p><p class="dst">（snipCompactIfNeeded()，由 HISTORY_SNIP 门控）。一个轻量级的修剪，删除旧的历史片段，返回{messages，tokensFreed，boundaryMessage}。 snipTokensFreed 值被检测为自动压缩，因为主token计数器从最近的辅助消息上的使用字段派生上下文大小，并且该消息在截断后仍然存在，其预截断 input_tokens 仍然附加；因此，除非明确通过，否则 snip 的节省对柜台来说是不可见的。</p></div>
+
+<div class="bilingual-pair"><p class="src">Microcompact.</p><p class="dst">微型。</p></div>
+
+<div class="bilingual-pair"><p class="src">Fine-grained compression that always runs a time-based path and optionally a cache-aware</p><p class="dst">细粒度压缩始终运行基于时间的路径和可选的缓存感知</p></div>
+
+<div class="bilingual-pair"><p class="src">path (gated by CACHED_MICROCOMPACT). When the cached path is enabled, boundary messages are deferred until after the API response so they can use actual cache_deleted_input_tokens rather than estimates. Returns {messages, compactionInfo} where compactionInfo may include pendingCacheEdits.</p><p class="dst">路径（由 CACHED_MICROCOMPACT 控制）。启用缓存路径后，边界消息将推迟到 API 响应之后，以便它们可以使用实际的 cache_deleted_input_tokens 而不是估计值。返回{messages，compactionInfo}，其中compactionInfo可能包括pendingCacheEdits。</p></div>
+
+<div class="bilingual-pair"><p class="src">Context collapse.</p><p class="dst">语境崩溃。</p></div>
+
+<div class="bilingual-pair"><p class="src">Gated by CONTEXT_COLLAPSE. A read-time projection over the conversation history.</p><p class="dst">由 CONTEXT_COLLAPSE 控制。对话历史记录的阅读时间投影。</p></div>
+
+<div class="bilingual-pair"><p class="src">The source comments explain: “Nothing is yielded; the collapsed view is a read-time projection over the REPL’s full history. Summary messages live in the collapse store, not the REPL array. This is what makes collapses persist across turns.” Unlike the other shapers, context collapse does not mutate the REPL’s stored history; it replaces the messagesForQuery array with a projected view via applyCollapsesIfNeeded(), so the model sees the collapsed version while the full history remains available for reconstruction.</p><p class="dst">源注释解释道：“没有产生任何结果；折叠视图是对 REPL 完整历史记录的读取时间投影。摘要消息存在于折叠存储中，而不是 REPL 数组中。这就是折叠在各个回合中持续存在的原因。”与其他塑造器不同，上下文崩溃不会改变 REPL 存储的历史记录；它通过 applyCollapsesIfNeeded() 将 messagesForQuery 数组替换为投影视图，因此模型可以看到折叠版本，同时完整的历史记录仍可用于重建。</p></div>
+
+<div class="bilingual-pair"><p class="src">Auto-compact.</p><p class="dst">自动紧凑。</p></div>
+
+<div class="bilingual-pair"><p class="src">The fifth shaper, triggering a full model-generated summary via compactConversation()</p><p class="dst">第五个整形器，通过compactConversation()触发完整的模型生成的摘要</p></div>
+
+<div class="bilingual-pair"><p class="src">in compact.ts. This function executes PreCompact hooks, creates a summary request using getCompact- Prompt(), and calls the model to produce a compressed summary. The result feeds into buildPostCom- pactMessages() (compact.ts). Auto-compact fires only when the context still exceeds the pressure threshold after all four previous shapers have run.</p><p class="dst">在compact.ts中。该函数执行 PreCompact 挂钩，使用 getCompactPrompt() 创建摘要请求，并调用模型来生成压缩摘要。结果将输入到 buildPostCompactMessages() (compact.ts) 中。仅当所有四个之前的整形器运行后上下文仍然超过压力阈值时，自动压缩才会触发。</p></div>
+
+<div class="bilingual-pair"><p class="src">4.4</p><p class="dst">4.4</p></div>
+
+<div class="bilingual-pair"><p class="src">Recovery Mechanisms</p><p class="dst">恢复机制</p></div>
+
+<div class="bilingual-pair"><p class="src">The query loop implements several recovery mechanisms for edge cases:</p><p class="dst">查询循环针对边缘情况实现了多种恢复机制：</p></div>
+
+<div class="bilingual-pair"><p class="src">• Max output tokens escalation: When the response hits the output token cap, the system can retry with an escalated limit, subject to a GrowthBook flag and the absence of an existing override or environment-variable cap. Up to three recovery attempts are allowed per turn (MAX_OUTPUT_- TOKENS_RECOVERY_LIMIT = 3).</p><p class="dst">• 最大输出token升级：当响应达到输出token上限时，系统可以使用升级的限制重试，但须遵守GrowthBook 标志以及不存在现有覆盖或环境变量上限的情况。每回合最多允许 3 次恢复尝试 (MAX_OUTPUT_- TOKENS_RECOVERY_LIMIT = 3)。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Reactive compaction (gated by REACTIVE_COMPACT): After a prompt-too-long or oversized-media error, the loop can attempt reactive compaction and retry the request if recovery succeeds.</p><p class="dst">• 反应式压缩（由REACTIVE_COMPACT 控制）：在提示太长或过大媒体错误后，循环可以尝试反应式压缩，如果恢复成功则重试请求。</p></div>
+
+<div class="bilingual-pair"><p class="src">The</p><p class="dst">的</p></div>
+
+<div class="bilingual-pair"><p class="src">hasAttemptedReactiveCompact flag ensures this fires at most once per turn.</p><p class="dst">hasAttemptedReactiveCompact 标志确保每回合最多触发一次。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Prompt-too-long handling: If the API returns a prompt_too_long error, the loop first attempts context- collapse overflow recovery and reactive compaction. Only after these fail does it terminate with reason:</p><p class="dst">• Prompt-too-long 处理：如果API 返回prompt_too_long 错误，则循环首先尝试上下文崩溃溢出恢复和反应式压缩。只有在这些失败之后，它才会有理由终止：</p></div>
+
+<div class="bilingual-pair"><p class="src">’prompt_too_long’. • Streaming fallback: The onStreamingFallback callback handles streaming API issues, allowing the loop to retry with a different strategy.</p><p class="dst">&#x27;prompt_too_long&#x27;。 • 流回退：onStreamingFallback 回调处理流API 问题，允许循环使用不同的策略重试。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Fallback model: The fallbackModel parameter enables switching to an alternative model if the primary model fails.</p><p class="dst">• Fallback 模型：fallbackModel 参数允许在主模型失败时切换到备用模型。</p></div>
+
+<div class="bilingual-pair"><p class="src">4.5</p><p class="dst">4.5</p></div>
+
+<div class="bilingual-pair"><p class="src">Stop Conditions</p><p class="dst">停止条件</p></div>
+
+<div class="bilingual-pair"><p class="src">Multiple conditions can terminate the loop:</p><p class="dst">多个条件可以终止循环：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. No tool use: The model produces only text content (the primary stop condition).</p><p class="dst">1. 不使用工具：模型仅生成文本内容（主要停止条件）。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Max turns: The configurable maxTurns limit is reached.</p><p class="dst">2. 最大匝数：达到可配置的最大匝数限制。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Context overflow: The API returns prompt_too_long.</p><p class="dst">3. 上下文溢出：API 返回prompt_too_long。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Hook intervention: A PostToolUse hook sets hook_stopped_continuation.</p><p class="dst">4. 钩子干预：PostToolUse 钩子设置 hook_stopped_continuation。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Explicit abort: The abortController signal fires.</p><p class="dst">5. 显式中止：abortController 信号触发。</p></div>
+
+<div class="bilingual-pair"><p class="src">The turn pipeline determines how tool requests are orchestrated and recovered. The next section examines the gate that determines whether each request is permitted to execute at all.</p><p class="dst">转向管道决定如何编排和恢复工具请求。下一节将检查决定每个请求是否被允许执行的门。</p></div>
+
+<div class="bilingual-pair"><p class="src">12</p><p class="dst">12</p></div>
+
+<div class="bilingual-pair"><p class="src">Tool</p><p class="dst">工具</p></div>
+
+<div class="bilingual-pair"><p class="src">Use</p><p class="dst">使用</p></div>
+
+<div class="bilingual-pair"><p class="src">Tools</p><p class="dst">工具</p></div>
+
+<div class="bilingual-pair"><p class="src">Policy Core</p><p class="dst">政策核心</p></div>
+
+<div class="bilingual-pair"><p class="src">Rules</p><p class="dst">规则</p></div>
+
+<div class="bilingual-pair"><p class="src">Hooks</p><p class="dst">挂钩</p></div>
+
+<div class="bilingual-pair"><p class="src">Modes</p><p class="dst">模式</p></div>
+
+<div class="bilingual-pair"><p class="src">Execution</p><p class="dst">执行</p></div>
+
+<div class="bilingual-pair"><p class="src">Environment</p><p class="dst">环境</p></div>
+
+<div class="bilingual-pair"><p class="src">User/Auto</p><p class="dst">用户/自动</p></div>
+
+<div class="bilingual-pair"><p class="src">Classifier</p><p class="dst">分类器</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission</p><p class="dst">许可</p></div>
+
+<div class="bilingual-pair"><p class="src">Decision</p><p class="dst">决定</p></div>
+
+<div class="bilingual-pair"><p class="src">Allow</p><p class="dst">允许</p></div>
+
+<div class="bilingual-pair"><p class="src">Deny</p><p class="dst">否认</p></div>
+
+<div class="bilingual-pair"><p class="src">Ask</p><p class="dst">询问</p></div>
+
+<div class="bilingual-pair"><p class="src">Denied</p><p class="dst">被拒绝</p></div>
+
+<div class="bilingual-pair"><p class="src">Result</p><p class="dst">结果</p></div>
+
+<div class="bilingual-pair"><p class="src">Allow/ Deny</p><p class="dst">允许/拒绝</p></div>
+
+<div class="bilingual-pair"><p class="src">Principle</p><p class="dst">原理</p></div>
+
+<div class="bilingual-pair"><p class="src">Description</p><p class="dst">描述</p></div>
+
+<div class="bilingual-pair"><p class="src">Progressive</p><p class="dst">进步的</p></div>
+
+<div class="bilingual-pair"><p class="src">Trust</p><p class="dst">信任</p></div>
+
+<div class="bilingual-pair"><p class="src">The agent starts with minimal</p><p class="dst">代理从最小的开始</p></div>
+
+<div class="bilingual-pair"><p class="src">autonomy; users expand it by approving tool invocations that become permanent rules.</p><p class="dst">自主权；用户通过批准成为永久规则的工具调用来扩展它。</p></div>
+
+<div class="bilingual-pair"><p class="src">Deny-First, Ask-by-Default</p><p class="dst">先拒绝，默认询问</p></div>
+
+<div class="bilingual-pair"><p class="src">Deny rules always win, even under</p><p class="dst">拒绝规则总是会赢，即使是在</p></div>
+
+<div class="bilingual-pair"><p class="src">looser modes. In default and manual approval modes, unmatched risk-bearing actions ask the user instead of running silently; optional auto mode routes many such reviews through classifier-mediated checks.</p><p class="dst">更宽松的模式。在默认和手动审批模式下，无与伦比的风险承担操作会询问用户，而不是静默运行；可选的自动模式通过分类器介导的检查路由许多此类评论。</p></div>
+
+<div class="bilingual-pair"><p class="src">Composable</p><p class="dst">可组合的</p></div>
+
+<div class="bilingual-pair"><p class="src">Policy</p><p class="dst">政策</p></div>
+
+<div class="bilingual-pair"><p class="src">Three mechanisms shape policy:</p><p class="dst">制定政策的三种机制：</p></div>
+
+<div class="bilingual-pair"><p class="src">declarative rules, global trust modes, and programmable hooks, each independently configurable.</p><p class="dst">声明性规则、全局信任模式和可编程挂钩，每个都可独立配置。</p></div>
+
+<div class="bilingual-pair"><p class="src">Figure 4 Permission gate overview and design principles.</p><p class="dst">图 4 权限门概述和设计原则。</p></div>
+
+<div class="bilingual-pair"><p class="src">5</p><p class="dst">5</p></div>
+
+<div class="bilingual-pair"><p class="src">Tool Authorization and Control Boundaries</p><p class="dst">工具授权和控制边界</p></div>
+
+<div class="bilingual-pair"><p class="src">Production coding agents adopt different safety architectures: layered policy enforcement, OS-level sandboxing, or version-control-based rollback. Claude Code combines the first two, implementing four design principles</p><p class="dst">生产coding agent采用不同的安全架构：分层策略实施、操作系统级沙箱或基于版本控制的回滚。 Claude Code 结合了前两者，实现了四个设计原则</p></div>
+
+<pre class="code-block">from Table 1: deny-first with human escalation, graduated trust spectrum, defense in depth with layered</pre>
+
+<div class="bilingual-pair"><p class="src">mechanisms, and reversibility-weighted risk assessment.</p><p class="dst">机制和可逆性加权风险评估。</p></div>
+
+<div class="bilingual-pair"><p class="src">When Claude decides to execute a tool (for example, running npm test via BashTool to reproduce the auth test failure), the request enters the permission pipeline shown in Figure 4. Except in bypass mode, tool invocations pass through the permission system. In the default interactive posture, actions beyond read-only access ask for approval rather than run silently, while more permissive modes replace some prompts with scoped auto-approval, denial, or classifier-mediated review. This default is motivated by a documented behavioral pattern: Anthropic’s auto-mode analysis (Hughes, 2026) found that users approve approximately 93% of permission prompts, indicating that approval fatigue renders interactive confirmation behaviorally unreliable as a sole safety mechanism. Because users habitually approve without careful review, the system must maintain safety independently of human vigilance. This motivates the architectural commitment to deny-first evaluation, blanket-deny pre-filtering, and sandboxing as independent layers that operate regardless of user attentiveness.</p><p class="dst">当 Claude 决定执行某个工具时（例如，通过 BashTool 运行 npm test 来重现身份验证测试失败），请求会进入如图 4 所示的权限管道。除了旁路模式外，工具调用都会通过权限系统。在默认的交互状态下，只读访问之外的操作请求批准而不是静默运行，而更宽松的模式则用范围内的自动批准、拒绝或分类器介导的审查替换一些提示。这种默认设置是由记录的行为模式驱动的：Anthropic 的自动模式分析（Hughes，2026）发现用户批准了大约 93% 的权限提示，这表明批准疲劳导致交互式确认作为唯一的安全机制在行为上不可靠。由于用户习惯性地在不仔细审查的情况下进行批准，因此系统必须独立于人类的警惕性来维护安全。这促使架构承诺将拒绝优先评估、全面拒绝预过滤和沙盒作为独立层，无论用户的注意力如何，都可以运行。</p></div>
+
+<div class="bilingual-pair"><p class="src">5.1</p><p class="dst">5.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission Modes and Rule Evaluation</p><p class="dst">权限模式和规则评估</p></div>
+
+<div class="bilingual-pair"><p class="src">Seven permission modes exist across the type definitions (5 external modes at types/permissions.ts; auto added conditionally; bubble in the type union):</p><p class="dst">类型定义中存在七种权限模式（types/permissions.ts 中的 5 种外部模式；有条件地自动添加；类型联合中的气泡）：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. plan: The model must create a plan; execution proceeds only after user approval.</p><p class="dst">1.计划：模型必须创建计划；仅在用户批准后才继续执行。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. default: Standard interactive use. Most operations require user approval.</p><p class="dst">2.默认：标准交互使用。大多数操作需要用户批准。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. acceptEdits: Edits within the working directory and certain filesystem shell commands (mkdir, rmdir, touch, rm, mv, cp, sed) are auto-approved; other shell commands require approval.</p><p class="dst">3. AcceptEdits：自动批准工作目录和某些文件系统 shell 命令（mkdir、rmdir、touch、rm、mv、cp、sed）内的编辑；其他 shell 命令需要批准。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. auto: An ML-based classifier evaluates requests that do not pass fast-path checks (gated by TRAN- SCRIPT_CLASSIFIER).</p><p class="dst">4. auto：基于 ML 的分类器评估未通过快速路径检查的请求（由 TRANSCRIPT_CLASSIFIER 控制）。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. dontAsk: Prompts are suppressed, and actions that would otherwise prompt are auto-denied; explicit allow and deny rules still apply.</p><p class="dst">5. dontAsk：禁止提示，自动拒绝本来会提示的操作；明确的允许和拒绝规则仍然适用。</p></div>
+
+<div class="bilingual-pair"><p class="src">6. bypassPermissions: Skips most permission prompts, but safety-critical checks and bypass-immune rules still apply.</p><p class="dst">6.bypassPermissions：跳过大多数权限提示，但安全关键检查和旁路免疫规则仍然适用。</p></div>
+
+<div class="bilingual-pair"><p class="src">7. bubble: Internal-only mode for subagent permission escalation to the parent terminal.</p><p class="dst">7. bubble：仅限内部模式，用于subagent权限升级到父终端。</p></div>
+
+<div class="bilingual-pair"><p class="src">The five externally visible modes (acceptEdits, bypassPermissions, default, dontAsk, plan) are defined in the EXTERNAL_PERMISSION_MODES array. The auto mode is conditionally included only when the TRANSCRIPT_CLASSIFIER feature flag is active. The bubble mode exists in the type union but not in 13 either mode array; it is used internally for subagent permission escalation (Section 8).</p><p class="dst">五种外部可见模式（acceptEdits、bypassPermissions、default、dontAsk、plan）在 EXTERNAL_PERMISSION_MODES 数组中定义。仅当 TRANSCRIPT_CLASSIFIER 功能标志处于活动状态时，才会有条件地包含自动模式。气泡模式存在于类型联合中，但不存在于 13 任一模式数组中；它在内部用于subagent权限升级（第 8 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission rules are evaluated in deny-first order (permissions.ts). The toolMatchesRule() function checks deny rules first: a deny rule always takes precedence over an allow rule, even when the allow rule is more specific. A broad deny (“deny all shell commands”) cannot be overridden by a narrow allow (“allow npm test”). The rule system supports tool-level matching (by tool name) and content-level matching (matching specific tool input patterns, such as Bash(prefix:npm)).</p><p class="dst">权限规则按拒绝优先的顺序进行评估 (permissions.ts)。 toolMatchesRule() 函数首先检查拒绝规则：拒绝规则始终优先于允许规则，即使允许规则更具体也是如此。宽泛的拒绝（“拒绝所有 shell 命令”）不能被狭义的允许（“允许 npm 测试”）覆盖。规则系统支持工具级匹配（按工具名称）和内容级匹配（匹配特定工具输入模式，例如 Bash(prefix:npm)）。</p></div>
+
+<div class="bilingual-pair"><p class="src">The seven modes span a graduated autonomy spectrum, from plan (user approves all plans before execution) through default and acceptEdits to bypassPermissions (minimal prompting).</p><p class="dst">这七种模式涵盖了分级自治范围，从计划（用户在执行前批准所有计划）到默认和接受编辑到绕过权限（最少提示）。</p></div>
+
+<div class="bilingual-pair"><p class="src">This gradient reflects a</p><p class="dst">这个梯度反映了</p></div>
+
+<div class="bilingual-pair"><p class="src">recurring design tension: as autonomy increases, the system must shift from interactive approval to automated safety checks. Other agent systems resolve this tension differently. SWE-Agent and OpenHands (Yang et al., 2024; Wang et al., 2024b) use Docker container isolation, sandboxing the agent’s entire execution environment rather than evaluating individual tool invocations. Aider (Gauthier, 2024) relies on Git as a safety net, making all changes reversible through version control. Claude Code’s approach layers multiple policy-enforcement mechanisms on top of an optional shell sandbox (Section 5.4), trading simplicity for fine-grained control over individual actions.</p><p class="dst">反复出现的设计紧张：随着自主权的增加，系统必须从交互式审批转向自动化安全检查。其他代理系统以不同的方式解决这种紧张关系。 SWE-Agent 和 OpenHands（Yang 等人，2024；Wang 等人，2024b）使用 Docker 容器隔离，对代理的整个执行环境进行沙箱处理，而不是评估单个工具调用。 Aider (Gauthier, 2024) 依赖 Git 作为安全网，通过版本控制使所有更改都可逆。 Claude Code 的方法将多个策略执行机制置于可选的 shell 沙箱之上（第 5.4 节），牺牲了简单性，换取了对各个操作的细粒度控制。</p></div>
+
+<div class="bilingual-pair"><p class="src">5.2</p><p class="dst">5.2</p></div>
+
+<div class="bilingual-pair"><p class="src">The Authorization Pipeline</p><p class="dst">授权管道</p></div>
+
+<div class="bilingual-pair"><p class="src">The full authorization pipeline proceeds through several stages:</p><p class="dst">完整的授权管道经过几个阶段：</p></div>
+
+<div class="bilingual-pair"><p class="src">Pre-filtering.</p><p class="dst">预过滤。</p></div>
+
+<div class="bilingual-pair"><p class="src">Before any tool request reaches runtime evaluation, filterToolsByDenyRules() (tools.ts) strips blanket-denied tools from the model’s view entirely at tool pool assembly time. The documentation states:</p><p class="dst">在任何工具请求到达运行时评估之前，filterToolsByDenyRules() (tools.ts) 在工具池组装时完全从模型视图中删除全面拒绝的工具。文档指出：</p></div>
+
+<div class="bilingual-pair"><p class="src">“Uses the same matcher as the runtime permission check, so MCP server-prefix rules like mcp__server strip all tools from that server before the model sees them.” This prevents the model from attempting to invoke forbidden tools, so the model does not waste calls on them.</p><p class="dst">“使用与运行时权限检查相同的匹配器，因此像 mcp__server 这样的 MCP 服务器前缀规则会在模型看到它们之前从该服务器中删除所有工具。”这可以防止模型尝试调用禁止的工具，因此模型不会浪费对它们的调用。</p></div>
+
+<div class="bilingual-pair"><p class="src">PreToolUse hook.</p><p class="dst">PreToolUse 挂钩。</p></div>
+
+<div class="bilingual-pair"><p class="src">Registered hooks fire as part of the permission pipeline. A PreToolUse hook can re-</p><p class="dst">注册的钩子作为权限管道的一部分触发。 PreToolUse 钩子可以重新</p></div>
+
+<div class="bilingual-pair"><p class="src">turn a permissionDecision to deny or ask, or an updatedInput that modifies the tool’s input parameters (types/hooks.ts). A hook allow does not bypass subsequent rule-based denies or safety checks. In the interactive path, the user dialog is queued first and hooks run asynchronously; coordinator and similar background-agent paths await automated checks before showing the dialog.</p><p class="dst">转动permissionDecision来拒绝或询问，或者转动updatedInput来修改工具的输入参数（types/hooks.ts）。挂钩允许不会绕过后续基于规则的拒绝或安全检查。在交互路径中，用户对话框首先排队，钩子异步运行；协调器和类似的后台代理路径在显示对话框之前等待自动检查。</p></div>
+
+<div class="bilingual-pair"><p class="src">Rule evaluation.</p><p class="dst">规则评估。</p></div>
+
+<div class="bilingual-pair"><p class="src">The deny-first rule engine evaluates the request. MCP tools are matched by their fully</p><p class="dst">拒绝优先规则引擎评估该请求。 MCP 工具完全匹配</p></div>
+
+<div class="bilingual-pair"><p class="src">qualified mcp__server__tool name, and server-level rules match all tools from that server.</p><p class="dst">限定的 mcp__server__tool 名称，并且服务器级规则匹配该服务器中的所有工具。</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission handler.</p><p class="dst">权限处理程序。</p></div>
+
+<div class="bilingual-pair"><p class="src">The handler in useCanUseTool.tsx branches into one of four paths based on runtime</p><p class="dst">useCanUseTool.tsx 中的处理程序根据运行时分支到四个路径之一</p></div>
+
+<div class="bilingual-pair"><p class="src">context: 1. Coordinator: For multi-agent coordination mode. Attempts automated resolution (classifier, hooks, rules) before falling back to user interaction.</p><p class="dst">context: 1. Coordinator：用于多Agent协调模式。在回退到用户交互之前尝试自动解决（分类器、挂钩、规则）。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Swarm worker: Handles worker agents in a multi-agent swarm with their own resolution logic.</p><p class="dst">2. Swarm Worker：使用自己的解析逻辑处理多代理群中的工作代理。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Speculative classifier: When BASH_CLASSIFIER is enabled and the tool is BashTool, a speculative classifier races a pre-started classification result against a timeout. If the classifier returns with high confidence, the tool is approved instantly without user interaction.</p><p class="dst">3. 推测分类器：当启用 BASH_CLASSIFIER 并且工具是 BashTool 时，推测分类器会与预先启动的分类结果与超时进行竞争。如果分类器以高置信度返回，则该工具会立即获得批准，无需用户交互。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Interactive: The fallback path. Presents the standard user approval dialog through the terminal UI.</p><p class="dst">4. 互动：后备路径。通过终端 UI 呈现标准用户批准对话框。</p></div>
+
+<div class="bilingual-pair"><p class="src">In coordinator and some background paths, automated resolution is attempted before user interaction. In the standard interactive path, the dialog can appear first while hooks or classifier checks continue in parallel.</p><p class="dst">在协调器和某些后台路径中，会在用户交互之前尝试自动解决。在标准交互路径中，对话框可以首先出现，同时挂钩或分类器检查继续并行。</p></div>
+
+<div class="bilingual-pair"><p class="src">When the classifier or a deny rule blocks an action, the system treats the denial as a routing signal rather than a hard stop: the model receives the denial reason, revises its approach, and attempts a safer alternative in the next loop iteration. The PermissionDenied hook event (Section 6) enables external code to observe and respond to these denials programmatically. This recovery-oriented design means that permission enforcement shapes the agent’s behavior rather than simply halting it.</p><p class="dst">当分类器或拒绝规则阻止某个操作时，系统会将拒绝视为路由信号而不是硬停止：模型接收拒绝原因，修改其方法，并在下一个循环迭代中尝试更安全的替代方案。 PermissionDenied 挂钩事件（第 6 节）使外部代码能够以编程方式观察和响应这些拒绝。这种以恢复为导向的设计意味着权限执行会塑造代理的行为，而不是简单地停止它。</p></div>
+
+<div class="bilingual-pair"><p class="src">14</p><p class="dst">14</p></div>
+
+<div class="bilingual-pair"><p class="src">5.3</p><p class="dst">5.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Auto-Mode Classifier and Hook Lifecycle</p><p class="dst">自动模式分类器和 Hook 生命周期</p></div>
+
+<div class="bilingual-pair"><p class="src">The auto-mode classifier (yoloClassifier.ts) participates in permission decisions when enabled. When TRAN- SCRIPT_CLASSIFIER is enabled, the classifier loads three prompt resources:</p><p class="dst">自动模式分类器（yoloClassifier.ts）在启用时参与权限决策。启用 TRANSCRIPT_CLASSIFIER 时，分类器会加载三个提示资源：</p></div>
+
+<div class="bilingual-pair"><p class="src">• A base system prompt. • An external permissions template.</p><p class="dst">• 基本系统提示符。 • 外部权限模板。</p></div>
+
+<div class="bilingual-pair"><p class="src">• For Anthropic-internal users, a separate internal template.</p><p class="dst">• 对于Anthropic 内部用户，单独的内部模板。</p></div>
+
+<div class="bilingual-pair"><p class="src">The classifier evaluates the proposed tool invocation against the conversation transcript and the permission tem- plate, producing an allow, deny, or request for manual approval. The function isUsingExternalPermissions() checks USER_TYPE and a forceExternalPermissions config flag to select the appropriate template.</p><p class="dst">分类器根据对话记录和权限模板评估建议的工具调用，生成允许、拒绝或手动批准的请求。函数isUsingExternalPermissions() 检查USER_TYPE 和forceExternalPermissions 配置标志以选择适当的模板。</p></div>
+
+<div class="bilingual-pair"><p class="src">Of the 27 hook events defined in the source (coreTypes.ts), five participate directly in the permission flow, each with a specific Zod-validated output schema (types/hooks.ts):</p><p class="dst">在源代码 (coreTypes.ts) 中定义的 27 个挂钩事件中，有 5 个直接参与权限流，每个事件都具有经过 Zod 验证的特定输出模式 (types/hooks.ts)：</p></div>
+
+<div class="bilingual-pair"><p class="src">• PreToolUse: Can return permissionDecision (deny or ask, but allow does not bypass subsequent checks), permissionDecisionReason, and updatedInput (modify parameters).</p><p class="dst">• PreToolUse：可以返回permissionDecision（拒绝或询问，但允许不绕过后续检查）、permissionDecisionReason 和updatedInput（修改参数）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• PostToolUse: Can inject additionalContext and, for MCP tools, return updatedMCPToolOutput to modify results before they enter the context.</p><p class="dst">• PostToolUse：可以注入additionalContext，并且对于MCP 工具，返回updatedMCPToolOutput 以在结果进入上下文之前修改结果。</p></div>
+
+<div class="bilingual-pair"><p class="src">• PostToolUseFailure: Can inject additionalContext for error-specific guidance.</p><p class="dst">• PostToolUseFailure：可以注入额外的上下文以获取特定于错误的指导。</p></div>
+
+<div class="bilingual-pair"><p class="src">• PermissionDenied: Can provide retry guidance after auto-mode denials.</p><p class="dst">• PermissionDenied：可以在自动模式拒绝后提供重试指导。</p></div>
+
+<div class="bilingual-pair"><p class="src">• PermissionRequest: Can return a decision of allow or deny. In coordinator and similar paths, this can resolve before the user dialog. In the standard interactive path, it can also run alongside the dialog.</p><p class="dst">• PermissionRequest：可以返回允许或拒绝的决定。在协调器和类似路径中，这可以在用户对话之前解决。在标准交互路径中，它也可以与对话框一起运行。</p></div>
+
+<div class="bilingual-pair"><p class="src">For non-MCP tools, the tool_result is emitted before the PostToolUse hook fires. For MCP tools, the result is delayed until after post hooks have run, enabling updatedMCPToolOutput to take effect.</p><p class="dst">对于非 MCP 工具，tool_result 在 PostToolUse 挂钩触发之前发出。对于 MCP 工具，结果会延迟到运行后挂钩之后，从而使 UpdatedMCPToolOutput 生效。</p></div>
+
+<div class="bilingual-pair"><p class="src">5.4</p><p class="dst">5.4</p></div>
+
+<div class="bilingual-pair"><p class="src">Shell Sandboxing</p><p class="dst">壳牌沙箱</p></div>
+
+<div class="bilingual-pair"><p class="src">Shell sandboxing provides an additional layer of protection for Bash and PowerShell commands (shouldUseSandbox.ts).</p><p class="dst">Shell 沙箱为 Bash 和 PowerShell 命令提供了额外的保护层 (shouldUseSandbox.ts)。</p></div>
+
+<div class="bilingual-pair"><p class="src">The shouldUseSandbox() function checks whether sandboxing is globally enabled, whether the invocation has opted out, and whether the command matches any exclusion patterns.</p><p class="dst">shouldUseSandbox() 函数检查沙箱是否全局启用、调用是否已选择退出以及命令是否与任何排除模式匹配。</p></div>
+
+<div class="bilingual-pair"><p class="src">When active, the sandbox provides filesystem and network isolation independent of the application-level permission model.3 A command can be permission-approved but still sandboxed, or permission-denied and never reach the sandbox check. The two systems operate on different axes: authorization versus isolation.</p><p class="dst">当处于活动状态时，沙箱提供独立于应用程序级权限模型的文件系统和网络隔离。3命令可以获得权限批准但仍处于沙箱状态，也可以拒绝权限但永远不会到达沙箱检查。这两个系统在不同的轴上运行：授权与隔离。</p></div>
+
+<div class="bilingual-pair"><p class="src">The layered safety architecture rests on an independence assumption: if one layer fails, others catch the violation. However, several layers share common performance constraints. Security researchers (Adversa.ai, 2026) have documented that commands with more than 50 subcommands fall back to a single generic approval prompt instead of running per-subcommand deny-rule checks, because per-subcommand parsing caused UI freezes. This example demonstrates that defense-in-depth can degrade when its layers share failure modes, a structural tension between safety and performance analyzed further in Section 12.3.</p><p class="dst">分层安全架构基于独立假设：如果一层失败，其他层就会发现违规行为。然而，多个层具有共同的性能限制。安全研究人员（Adversa.ai，2026）记录了具有超过 50 个子命令的命令会回退到单个通用批准提示，而不是运行每个子命令的拒绝规则检查，因为每个子命令的解析会导致 UI 冻结。这个例子表明，当纵深防御的各层共享故障模式时，纵深防御可能会降级，这是第 12.3 节中进一步分析的安全性和性能之间的结构张力。</p></div>
+
+<div class="bilingual-pair"><p class="src">The permission pipeline governs whether a tool request executes. The next section examines what determines which tools exist in the first place: the extensibility architecture that assembles the model’s action surface.</p><p class="dst">权限管道控制工具请求是否执行。下一节将首先研究决定哪些工具存在的因素：组装模型操作面的可扩展性架构。</p></div>
+
+<div class="bilingual-pair"><p class="src">6</p><p class="dst">6</p></div>
+
+<div class="bilingual-pair"><p class="src">Extensibility: MCP, Plugins, Skills, and Hooks</p><p class="dst">可扩展性：MCP、插件、技能和挂钩</p></div>
+
+<div class="bilingual-pair"><p class="src">A recurring design question for coding agents is how to structure the extension surface: a single unified mechanism, a small number of specialized mechanisms, or a layered stack with different context costs.</p><p class="dst">coding agent的一个反复出现的设计问题是如何构建扩展表面：单个统一机制、少量专门机制或具有不同上下文成本的分层堆栈。</p></div>
+
+<div class="bilingual-pair"><p class="src">The analysis here illustrates two design principles from Table 1: composable multi-mechanism extensibility and externalized programmable policy. Returning to the running example, once Claude is trying to repair auth.test.ts and the earlier npm test request has been mediated by the permission system (Section 5), the 3Independent security research reports a parser-differential gap in this network confinement during the analyzed window: the host allowlist used a JavaScript suffix match while name resolution truncated at an embedded null byte, so a crafted hostname could pass the suffix check yet resolve to a different, blocked host. The reported affected range (v2.0.24–v2.1.89) includes the v2.1.88 snapshot analyzed here, and no CVE was assigned (Cyber Security News, 2026) (Tier C).</p><p class="dst">这里的分析说明了表 1 中的两个设计原则：可组合的多机制可扩展性和外部化的可编程策略。回到正在运行的示例，一旦 Claude 尝试修复 auth.test.ts 并且早期的 npm 测试请求已由权限系统（第 5 节）调解，3Independent 安全研究报告在分析窗口期间此网络限制中存在解析器差异差距：主机白名单使用 JavaScript 后缀匹配，而名称解析在嵌入的空字节处被截断，因此精心设计的主机名可以通过后缀检查，但解析为不同的、被阻止的主机。报告的受影响范围 (v2.0.24–v2.1.89) 包括此处分析的 v2.1.88 快照，并且未分配 CVE（网络安全新闻，2026 年）（C 级）。</p></div>
+
+<div class="bilingual-pair"><p class="src">15</p><p class="dst">15</p></div>
+
+<div class="bilingual-pair"><p class="src"># one turn of Claude Code’s agent loop while not stopped:</p><p class="dst"># Claude Code 的代理循环不停止时循环一圈：</p></div>
+
+<div class="bilingual-pair"><p class="src"># a assemble: build what the model sees context = assemble( system_prompt, # instructions header tool_schemas, # callable tool signatures history, # prior turn messages hook_additions, # pushed in by hooks ) # b model: pick the next action action = model(context, tools) # flat tool pool if action.is_text_only():</p><p class="dst"># a assemble：构建模型所看到的内容 context = assemble( system_prompt, # 指令头 tool_schemas, # 可调用工具签名历史记录, # 之前的转向消息 hook_additions, # 由 hooks 推入 ) # b 模型：选择下一个操作 action = model(context, tools) # 扁平工具池 if action.is_text_only():</p></div>
+
+<div class="bilingual-pair"><p class="src">stopped = run_stop_hooks(action) # may veto continue # c execute: authorize and run the tool call action, hook_decision = run_pre_tool_hooks(action) if not permitted(action, hook_decision):</p><p class="dst">stop = run_stop_hooks(action) # 可以否决 continue # c 执行：授权并运行工具调用操作，hook_decision = run_pre_tool_hooks(action) 如果不允许(action, hook_decision):</p></div>
+
+<div class="bilingual-pair"><p class="src">continue result = execute(action) # tool runs here result = run_post_tool_hooks(result) # mutate/annotate history.append(action, result) a assemble(): what the model sees Element What it does CLAUDE.md files Loaded into context; files above the working directory load at startup, and subdirectory files load on demand Skill descriptions Advertises skills so the model calls SkillTool MCP resources &amp; prompts Non-tool content an MCP server pushes Output style Replaces the response-formatting system block UserPromptSubmit hook Inject context, or block, on every user turn SessionStart hook One-shot context injection at session start b model(): what the model can reach Element What it does Built-in tools Read / Edit / Bash / . . .</p><p class="dst">continue result =execute(action) # 工具在此运行 result = run_post_tool_hooks(result) # mutate/annotate History.append(action, result) a assemble(): 模型看到的内容 Element 做什么 CLAUDE.md 文件 加载到上下文中；启动时加载工作目录上方的文件，按需加载子目录文件 技能描述 宣传技能，以便模型调用 SkillTool MCP 资源和提示 MCP 服务器推送的非工具内容 输出样式 替换响应格式化系统块 UserPromptSubmit 钩子 在每次用户转动时注入上下文或块 SessionStart 钩子 在会话启动时一次性注入上下文 b model()：模型可以到达的内容 元素 作用 内置工具 读取/编辑/Bash / 。 。 。</p></div>
+
+<div class="bilingual-pair"><p class="src">shipped with the CLI MCP tools Tools from any MCP server, in the same flat pool SkillTool Meta-tool that launches a skill by name AgentTool Meta-tool that spawns a sub- agent recursively c execute(): whether / how an action runs Element What it does Permission rules Declarative allow / deny / ask per call PreToolUse hook Approve / block / rewrite a tool call PostToolUse hook Mutate output or in- ject context after a call Stop hook Force the loop to keep going at model stop SubagentStop hook Same, for sub-agents spawned via Agent- Tool Notification hook External side effects on user notifications Figure 5 Where Claude Code’s extension mechanisms plug into the agent loop. The pseudocode on the left is a zoom-in of the Agent Loop block in Figure 1. Every agent loop has three injection points:</p><p class="dst">CLI MCP 工具 随 CLI MCP 工具一起提供 来自任何 MCP 服务器的工具，位于同一个扁平池中 SkillTool 按名称启动技能的元工具 AgentTool 递归生成subagent的元工具 cexecute()：操作是否/如何运行 元素 作用 权限规则 声明式允许/拒绝/询问每次调用 PreToolUse 挂钩 批准/阻止/重写工具调用 PostToolUse 挂钩 调用后改变输出或注入上下文 Stop 挂钩 强制循环继续运行model stop SubagentStop hook 相同，对于通过 Agent-Tool 通知钩子生成的subagent 对用户通知的外部副作用 图 5 Claude Code 的扩展机制插入代理循环的位置。左侧的伪代码是图 1 中代理循环块的放大图。每个代理循环都有三个注入点：</p></div>
+
+<div class="bilingual-pair"><p class="src">a assemble() controls what the model sees, b model() controls what it can reach, and c execute() controls whether and how an action actually runs.</p><p class="dst">a assemble() 控制模型看到的内容，b model() 控制模型可以到达的内容，cexecute() 控制操作是否实际运行以及如何运行。</p></div>
+
+<div class="bilingual-pair"><p class="src">next question is what extension-enabled action surface is available for the repair. When a turn begins in Claude Code, the model sees not just built-in tools like BashTool and FileReadTool, but also database query tools from an MCP server, a custom lint skill from .claude/skills/, and tools contributed by an installed plugin. These arrive through four mechanisms that extend the agent at different points of the loop: MCP servers provide external tool integration, plugins package and distribute bundles of components, skills inject domain-specific instructions, and hooks intercept the tool execution lifecycle. Anthropic’s documentation (Anthropic, 2026h) presents a broader view that includes CLAUDE.md (Section 7) and subagents (Section 8) alongside the four mechanisms analyzed here. We treat CLAUDE.md and subagents in their own sections because they operate in different subsystems (context construction and delegation, respectively), but the context-cost ordering is architecturally significant: it reveals how each extension point trades off expressiveness against the bounded context window.</p><p class="dst">下一个问题是哪些支持扩展的操作界面可用于修复。当 Claude Code 中的回合开始时，模型不仅会看到 BashTool 和 FileReadTool 等内置工具，还会看到来自 MCP 服务器的数据库查询工具、来自 .claude/skills/ 的自定义 lint 技能以及由已安装插件提供的工具。这些通过在循环的不同点扩展代理的四种机制实现：MCP 服务器提供外部工具集成、插件打包和分发组件包、技能注入特定于域的指令以及拦截工具执行生命周期的钩子。 Anthropic 的文档（Anthropic，2026h）提出了更广泛的观点，包括 CLAUDE.md（第 7 节）和subagent（第 8 节）以及此处分析的四种机制。我们将 CLAUDE.md 和subagent放在各自的部分中，因为它们在不同的子系统中运行（分别是上下文构建和委托），但上下文成本排序在架构上具有重要意义：它揭示了每个扩展点如何权衡有界上下文窗口的表达能力。</p></div>
+
+<div class="bilingual-pair"><p class="src">6.1</p><p class="dst">6.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Four Extension Mechanisms</p><p class="dst">四种扩展机制</p></div>
+
+<div class="bilingual-pair"><p class="src">The mechanisms are implemented in distinct source directories (Figure 5) and serve different integration patterns:</p><p class="dst">这些机制在不同的源目录中实现（图 5）并服务于不同的集成模式：</p></div>
+
+<div class="bilingual-pair"><p class="src">MCP servers.</p><p class="dst">MCP 服务器。</p></div>
+
+<div class="bilingual-pair"><p class="src">The Model Context Protocol is the primary external tool integration path. MCP servers are</p><p class="dst">模型上下文协议是主要的外部工具集成路径。 MCP 服务器是</p></div>
+
+<div class="bilingual-pair"><p class="src">configured from multiple scopes: project, user, local, and enterprise, with additional plugin and claude.ai servers merged at runtime (services/mcp/config.ts). The MCP client (services/mcp/client.ts) supports multiple transport types: stdio, SSE, HTTP, WebSocket, SDK, plus IDE-specific variants (sse-ide, ws-ide) and an internal claudeai-proxy. Each connected server contributes tool definitions as MCPTool objects. Dedicated built-in tools ListMcpResourcesTool and ReadMcpResourceTool provide access to MCP resources.</p><p class="dst">从多个范围进行配置：项目、用户、本地和企业，并在运行时合并其他插件和 claude.ai 服务器 (services/mcp/config.ts)。 MCP 客户端 (services/mcp/client.ts) 支持多种传输类型：stdio、SSE、HTTP、WebSocket、SDK，以及 IDE 特定变体（sse-ide、ws-ide）和内部 claudeai-proxy。每个连接的服务器都将工具定义作为 MCPTool 对象提供。专用内置工具 ListMcpResourcesTool 和 ReadMcpResourceTool 提供对 MCP 资源的访问。</p></div>
+
+<div class="bilingual-pair"><p class="src">16</p><p class="dst">16</p></div>
+
+<div class="bilingual-pair"><p class="src">Plugins.</p><p class="dst">插件。</p></div>
+
+<div class="bilingual-pair"><p class="src">Plugins serve a dual role: they are both a packaging format and a distribution mechanism. The PluginManifestSchema (utils/plugins/schemas.ts) accepts ten component types: commands, agents, skills, hooks, MCP servers, LSP servers, output styles, channels, settings, and user configuration. The plugin loader (utils/plugins/pluginLoader.ts) validates manifests and routes each component to its respective registry:</p><p class="dst">插件有双重作用：它们既是一种打包格式，又是一种分发机制。 PluginManifestSchema (utils/plugins/schemas.ts) 接受十种组件类型：命令、代理、技能、挂钩、MCP 服务器、LSP 服务器、输出样式、通道、设置和用户配置。插件加载器 (utils/plugins/pluginLoader.ts) 验证清单并将每个组件路由到其各自的注册表：</p></div>
+
+<div class="bilingual-pair"><p class="src">commands and skills surface through the SkillTool meta-tool, agents appear in definitions consumed by AgentTool, hooks merge into the hook registry, MCP and LSP servers fold into their standard configurations, and output styles modify response formatting. A single plugin package can therefore extend Claude Code across multiple component types simultaneously, making plugins the primary distribution vehicle for third-party extensions.</p><p class="dst">命令和技能通过 SkillTool 元工具显示，代理出现在 AgentTool 使用的定义中，挂钩合并到挂钩注册表中，MCP 和 LSP 服务器折叠到其标准配置中，输出样式修改响应格式。因此，单个插件包可以同时跨多个组件类型扩展 Claude Code，使插件成为第三方扩展的主要分发工具。</p></div>
+
+<div class="bilingual-pair"><p class="src">Skills.</p><p class="dst">技能。</p></div>
+
+<div class="bilingual-pair"><p class="src">Each skill is defined by a SKILL.md file with YAML frontmatter. The parseSkillFrontmatterFields()</p><p class="dst">每个技能都由带有 YAML frontmatter 的 SKILL.md 文件定义。 parseSkillFrontmatterFields()</p></div>
+
+<pre class="code-block">function (loadSkillsDir.ts) parses 15+ fields including display name, description, allowed tools (granting</pre>
+
+<div class="bilingual-pair"><p class="src">the skill access to additional tools), argument hints, model overrides, execution context (’fork’ for isolated execution), associated agent definitions, effort levels, and shell configuration. Skills can define their own hooks, which register dynamically on invocation. Bundled skills are registered in-memory at startup. When invoked, the SkillTool meta-tool injects the skill’s instructions into the context.</p><p class="dst">访问其他工具的技能）、参数提示、模型覆盖、执行上下文（用于隔离执行的“分叉”）、关联的代理定义、工作量级别和 shell 配置。技能可以定义自己的钩子，这些钩子在调用时动态注册。捆绑技能在启动时注册在内存中。调用时，SkillTool 元工具会将技能的指令注入上下文中。</p></div>
+
+<div class="bilingual-pair"><p class="src">Hooks.</p><p class="dst">钩子。</p></div>
+
+<div class="bilingual-pair"><p class="src">The source code defines 27 hook events spanning tool authorization (PreToolUse, PostToolUse, Post- ToolUseFailure, PermissionRequest, PermissionDenied), session lifecycle (SessionStart, SessionEnd, Setup, Stop, StopFailure), user interaction (UserPromptSubmit, Elicitation, ElicitationResult), subagent coor- dination (SubagentStart, SubagentStop, TeammateIdle, TaskCreated, TaskCompleted), context manage- ment (PreCompact, PostCompact, InstructionsLoaded, ConfigChange), workspace events (CwdChanged, FileChanged, WorktreeCreate, WorktreeRemove), and notifications (coreTypes.ts, coreSchemas.ts). Of these, 15 have event-specific output schemas with rich fields supporting permission decisions, context injec- tion, input modification, MCP result transformation, and retry control (types/hooks.ts). Persisted hook commands configured via settings and plugins use four command types: shell commands (type: command), LLM prompt hooks (type: prompt), HTTP hooks (type: http), and agentic verifier hooks (type: agent) (schemas/hooks.ts). The runtime additionally supports non-persistable callback hooks (type: callback) used by the SDK and internal instrumentation (types/hooks.ts). Hook sources include settings.json, plugins, and managed policy at startup; skill hooks register dynamically on invocation (utils/hooks.ts). The five tool-authorization events are detailed in Section 5.3.</p><p class="dst">源代码定义了 27 个挂钩事件，涵盖工具授权（PreToolUse、PostToolUse、PostToolUseFailure、PermissionRequest、PermissionDenied）、会话生命周期（SessionStart、SessionEnd、Setup、Stop、StopFailure）、用户交互（UserPromptSubmit、Elicitation、EliitationResult）、subagent协调（SubagentStart、SubagentStop、TeammateIdle、TaskCreated、TaskCompleted）、上下文管理（PreCompact、PostCompact、InstructionsLoaded、ConfigChange）、工作区事件（CwdChanged、FileChanged、WorktreeCreate、WorktreeRemove）和通知（coreTypes.ts、coreSchemas.ts）。其中，15 个具有特定于事件的输出模式，具有丰富的字段支持权限决策、上下文注入、输入修改、MCP 结果转换和重试控制（types/hooks.ts）。通过设置和插件配置的持久挂钩命令使用四种命令类型：shell 命令（类型：command）、LLM 提示挂钩（类型：prompt）、HTTP 挂钩（类型：http）和代理验证器挂钩（类型：agent）(schemas/hooks.ts)。运行时还支持 SDK 和内部检测 (types/hooks.ts) 使用的非持久回调挂钩（类型：callback）。钩子源包括settings.json、插件和启动时的托管策略；技能挂钩在调用时动态注册（utils/hooks.ts）。 5.3 节详细介绍了五个工具授权事件。</p></div>
+
+<div class="bilingual-pair"><p class="src">6.2</p><p class="dst">6.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Tool Pool Assembly</p><p class="dst">工具池装配</p></div>
+
+<div class="bilingual-pair"><p class="src">The assembleToolPool() function at tools.ts is described in source comments as “the single source of truth for combining built-in tools with MCP tools.” The assembly follows a five-step pipeline:</p><p class="dst">tools.ts 中的 assembleToolPool() 函数在源代码注释中被描述为“将内置工具与 MCP 工具相结合的单一事实来源”。组装遵循五步流程：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Base tool enumeration. getAllBaseTools() (tools.ts) returns an array of up to 54 tools: 19 are always included (such as BashTool, FileReadTool, AgentTool, SkillTool), and 35 more are conditionally included based on feature flags, environment variables, and user type. Anthropic-internal users get additional internal tools. Worktree mode enables EnterWorktreeTool and ExitWorktreeTool. Agent swarms enable team tools. When embedded search tools are available in the Bun binary, dedicated GlobTool and GrepTool are omitted.</p><p class="dst">1. 基础工具枚举。 getAllBaseTools() (tools.ts) 返回最多包含 54 个工具的数组：始终包含 19 个工具（例如 BashTool、FileReadTool、AgentTool、SkillTool），根据功能标志、环境变量和用户类型有条件包含另外 35 个工具。 Anthropic-内部用户可以获得额外的内部工具。 Worktree 模式启用 EnterWorktreeTool 和 ExitWorktreeTool。代理群启用团队工具。当 Bun 二进制文件中提供嵌入式搜索工具时，将省略专用的 GlobTool 和 GrepTool。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Mode filtering. getTools() (tools.ts) applies mode-specific filtering. In CLAUDE_CODE_SIMPLE mode, only Bash, Read, and Edit are available (or REPLTool in the REPL branch; plus coordinator tools if applicable). Each tool’s isEnabled() method is called for runtime availability checks.</p><p class="dst">2.模式过滤。 getTools() (tools.ts) 应用特定于模式的过滤。在 CLAUDE_CODE_SIMPLE 模式下，仅 Bash、Read 和 Edit 可用（或 REPL 分支中的 REPLTool；加上协调器工具（如果适用））。每个工具的 isEnabled() 方法都会被调用以进行运行时可用性检查。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Deny rule pre-filtering. filterToolsByDenyRules() (tools.ts) strips blanket-denied tools from the model’s view before any call.</p><p class="dst">3.拒绝规则预过滤。 filterToolsByDenyRules() (tools.ts) 在任何调用之前从模型视图中删除全面拒绝的工具。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. MCP tool integration. MCP tools from appState.mcp.tools are filtered by deny rules and merged with built-in tools.</p><p class="dst">4.MCP工具集成。 appState.mcp.tools 中的 MCP 工具按拒绝规则过滤并与内置工具合并。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Deduplication. Tools are deduplicated by name, with built-in tools taking precedence over MCP tools.</p><p class="dst">5. 重复数据删除。工具按名称进行重复数据删除，内置工具优先于 MCP 工具。</p></div>
+
+<div class="bilingual-pair"><p class="src">Both REPL.tsx (via the useMergedTools hook) and AgentTool.tsx (when building the worker tool set) invoke this function, ensuring consistent assembly across all execution paths. At request time, deferred tools may be hidden from the model’s context until explicitly queried via ToolSearch (tools.ts).</p><p class="dst">REPL.tsx（通过 useMergedTools 挂钩）和 AgentTool.tsx（构建辅助工具集时）都会调用此函数，以确保所有执行路径中的汇编一致。在请求时，延迟工具可能会从模型上下文中隐藏，直到通过 ToolSearch (tools.ts) 显式查询。</p></div>
+
+<div class="bilingual-pair"><p class="src">17</p><p class="dst">17 号</p></div>
+
+<div class="bilingual-pair"><p class="src">Agent-based extension (custom agent definitions via .claude/agents/*.md and plugin-contributed agents) is covered in Section 8, because agents differ fundamentally from the four mechanisms above: they create new, isolated context windows rather than extending the current one.</p><p class="dst">基于代理的扩展（通过 .claude/agents/*.md 自定义代理定义和插件贡献的代理）将在第 8 节中介绍，因为代理与上述四种机制有根本的不同：它们创建新的、独立的上下文窗口，而不是扩展当前窗口。</p></div>
+
+<div class="bilingual-pair"><p class="src">6.3</p><p class="dst">6.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Why Four Mechanisms?</p><p class="dst">为什么有四种机制？</p></div>
+
+<div class="bilingual-pair"><p class="src">Given that each additional extension mechanism increases the surface area developers must learn, a natural question is why Claude Code uses four distinct mechanisms rather than consolidating into one or two. The answer lies in the observation that different kinds of extensibility impose different costs on the context window, and a single mechanism cannot span the full range from zero-context lifecycle hooks to schema-heavy tool servers without forcing unnecessary trade-offs on extension authors.</p><p class="dst">鉴于每种额外的扩展机制都会增加开发人员必须学习的表面积，一个自然的问题是为什么 Claude Code 使用四种不同的机制而不是合并为一两种机制。答案在于观察到不同类型的可扩展性对上下文窗口施加了不同的成本，并且单一机制无法跨越从零上下文生命周期挂钩到模式密集型工具服务器的整个范围，而不迫使扩展作者进行不必要的权衡。</p></div>
+
+<div class="bilingual-pair"><p class="src">Table 2 What each extension mechanism uniquely provides. Context cost refers to how much of the bounded context window the mechanism consumes when active.</p><p class="dst">表 2 每种扩展机制独特提供的内容。上下文成本是指机制在活动时消耗多少有界上下文窗口。</p></div>
+
+<div class="bilingual-pair"><p class="src">Mechanism</p><p class="dst">机制</p></div>
+
+<div class="bilingual-pair"><p class="src">Unique Capability</p><p class="dst">独特的能力</p></div>
+
+<div class="bilingual-pair"><p class="src">Context Cost</p><p class="dst">上下文成本</p></div>
+
+<div class="bilingual-pair"><p class="src">Insertion Point</p><p class="dst">插入点</p></div>
+
+<div class="bilingual-pair"><p class="src">MCP servers</p><p class="dst">MCP服务器</p></div>
+
+<div class="bilingual-pair"><p class="src">External service integration (multi-transport)</p><p class="dst">外部服务集成（多传输）</p></div>
+
+<div class="bilingual-pair"><p class="src">High once tool schemas load</p><p class="dst">一次工具模式加载量高</p></div>
+
+<div class="bilingual-pair"><p class="src">model():tool pool Plugins Multi-component packaging + distribution Medium (varies) All three points Skills Domain-specific instructions + meta-tool invocation Low until invoked assemble():context injection Hooks Lifecycle interception + event-driven automation Zero by default execute():pre/post tool As Table 2 summarizes, each mechanism trades deployment complexity for a different kind of extensibility.</p><p class="dst">model():工具池 插件 多组件打包 + 分发 中等（可变） 所有三点 技能 特定于领域的指令 + 元工具调用 低直到调用 assemble():上下文注入 挂钩 生命周期拦截 + 事件驱动的自动化 默认情况下为零execute():前/后工具 正如表 2 所总结的，每种机制都以部署复杂性换取不同类型的可扩展性。</p></div>
+
+<div class="bilingual-pair"><p class="src">MCP servers provide runtime tool integration (the model gains new callable tools) at the cost of server management overhead and context budget consumed by tool schemas, which by default load only when a tool is needed. Skills shape how the agent thinks (not just what tools it has) at minimal context cost, since only frontmatter descriptions stay in the prompt until the skill is invoked. Hooks provide cross-cutting lifecycle control (blocking, rewriting, or annotating tool calls) with no context footprint by default, though hooks can opt into injecting additional context. Plugins bundle any combination of the other three into distributable packages, acting as the packaging and distribution layer rather than a distinct runtime primitive.</p><p class="dst">MCP 服务器提供运行时工具集成（模型获得新的可调用工具），但代价是工具模式消耗的服务器管理开销和上下文预算，默认情况下仅在需要工具时才加载。技能以最小的上下文成本塑造代理的思维方式（而不仅仅是其拥有的工具），因为在调用技能之前，只有前面的描述会保留在提示中。钩子提供横切生命周期控制（阻止、重写或注释工具调用），默认情况下没有上下文足迹，尽管钩子可以选择注入额外的上下文。插件将其他三个的任意组合捆绑到可分发包中，充当打包和分发层而不是独特的运行时原语。</p></div>
+
+<div class="bilingual-pair"><p class="src">The graduated context-cost ordering (zero for hooks, low for skills before invocation, medium for plugins, high for MCP) means that cheap extensions can scale widely without exhausting the context window, while expensive ones are reserved for cases that genuinely require new tool surfaces.</p><p class="dst">分级上下文成本排序（挂钩为零，调用前技能较低，插件中等，MCP 高）意味着廉价的扩展可以在不耗尽上下文窗口的情况下广泛扩展，而昂贵的扩展则保留用于真正需要新工具表面的情况。</p></div>
+
+<div class="bilingual-pair"><p class="src">Some agent frameworks provide a single extension mechanism, typically a tool-only API where all customization arrives as additional callable tools. Others use two tiers, separating tools from configuration or instruction injection. Claude Code’s four-mechanism approach can accommodate a broader range of extension patterns,</p><p class="dst">一些代理框架提供单一扩展机制，通常是纯工具 API，其中所有自定义都作为附加可调用工具到达。其他人使用两层，将工具与配置或指令注入分开。 Claude Code 的四种机制方法可以适应更广泛的扩展模式，</p></div>
+
+<pre class="code-block">from zero-context event handlers to full external service integrations, but it increases the learning curve</pre>
+
+<div class="bilingual-pair"><p class="src">developers face when deciding which mechanism to use for a given integration task.</p><p class="dst">开发人员在决定对给定集成任务使用哪种机制时面临的问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">7</p><p class="dst">7</p></div>
+
+<div class="bilingual-pair"><p class="src">Context Construction and Memory</p><p class="dst">语境构建和记忆</p></div>
+
+<div class="bilingual-pair"><p class="src">How an agent manages its context window and persists user instructions is a central design choice, with different systems choosing between file-based transparency, database-backed retrieval, and opaque learned representations. The design choices here implement two principles from Table 1: context as scarce resource with progressive management and transparent file-based configuration and memory.</p><p class="dst">代理如何管理其上下文窗口并保留用户指令是一个核心设计选择，不同的系统在基于文件的透明性、数据库支持的检索和不透明的学习表示之间进行选择。这里的设计选择实现了表 1 中的两个原则：上下文作为稀缺资源，具有渐进式管理和透明的基于文件的配置和内存。</p></div>
+
+<div class="bilingual-pair"><p class="src">By this point in the running example, the task has accumulated state: the original request, the npm test permission outcome, the tool pool assembled in Section 6, and any file reads or command outputs gathered so far. This section asks how that growing state is packed into Claude Code’s bounded context window before the next model call.</p><p class="dst">此时，在运行示例中，任务已累积状态：原始请求、npm 测试权限结果、第 6 节中组装的工具池以及迄今为止收集的任何文件读取或命令输出。本节询问如何在下一次模型调用之前将增长状态打包到 Claude Code 的有界上下文窗口中。</p></div>
+
+<div class="bilingual-pair"><p class="src">Before the model is called, the agent loop assembles a context window from the tool pool (Section 6), CLAUDE.md files, auto memory, and conversation history. The following subsections cover the assembly order, the CLAUDE.md hierarchy, and the multi-step compaction pipeline.</p><p class="dst">在调用模型之前，代理循环从工具池（第 6 节）、CLAUDE.md 文件、自动内存和对话历史记录中组装上下文窗口。以下小节介绍了组装顺序、CLAUDE.md 层次结构和多步骤压缩管道。</p></div>
+
+<div class="bilingual-pair"><p class="src">18</p><p class="dst">18</p></div>
+
+<div class="bilingual-pair"><p class="src">Context Window</p><p class="dst">上下文窗口</p></div>
+
+<div class="bilingual-pair"><p class="src">System Prompt</p><p class="dst">系统提示</p></div>
+
+<div class="bilingual-pair"><p class="src">Skill Description</p><p class="dst">技能说明</p></div>
+
+<div class="bilingual-pair"><p class="src">Environment Info</p><p class="dst">环境信息</p></div>
+
+<div class="bilingual-pair"><p class="src">MCP Tool Names</p><p class="dst">MCP 工具名称</p></div>
+
+<div class="bilingual-pair"><p class="src">Output Styles</p><p class="dst">输出风格</p></div>
+
+<div class="bilingual-pair"><p class="src">(2) Project Config [startup / lazy] CLAUDE.md Sources [4 types] Path-scoped Rules (.claude/rules/*) Managed / User / Project / Local | start up (3) Memory [startup] Auto Memory Compact Summary (Replaces long history) (4) Conversation [carry forward] Conversation History Subagent Summaries (5) Runtime [carry forward] Read Files Command Outputs Tool Results (6) On-Demand [lazy] Deferred Tool Definitions (Full schemas loaded only when needed) (1) System Layer [startup] Loaded Time: (1) (2) (3) at start up -&gt; (4) accumulate per turn -&gt; (5) added during execution -&gt; (6) on demand via Tool Search Claude Model Reads all Read-only ACCESS Mutability increases Hot-reload Sys-write Append Model-trigger Lazy-load ACCESS Tool Calls Text Response Tool Search Generate Figure 6 Context construction and memory hierarchy. Sources converging on the context window include system prompt, output styles, environment info, the CLAUDE.md hierarchy (managed, user, project, and local), auto memory, path-scoped rules, MCP tool names, deferred tool definitions via ToolSearch, conversation history, file reads, command outputs, tool results, subagent summaries, and compact summaries.</p><p class="dst">(2) 项目配置 [启动/惰性] CLAUDE.md 源 [4 种类型] 路径范围规则 (.claude/rules/*) 托管/用户/项目/本地 |启动 (3) 内存 [启动] 自动内存紧凑摘要（替换长期历史记录） (4) 对话 [结转] 对话历史记录subagent摘要 (5) 运行时 [结转] 读取文件命令输出工具结果 (6) 按需 [惰性] 延迟工具定义（仅在需要时加载完整模式） (1) 系统层 [启动] 加载时间：(1) (2) (3) 启动时 -&gt; (4) 累积每回合 -&gt; (5) 在执行过程中添加 -&gt; (6) 通过工具搜索按需添加 Claude Model 读取全部 只读 ACCESS 可变性增加 热重载 Sys-write 追加 模型触发 延迟加载 ACCESS 工具调用 文本响应 工具搜索 生成 图 6 上下文构建和内存层次结构。上下文窗口上汇聚的源包括系统提示、输出样式、环境信息、CLAUDE.md 层次结构（托管、用户、项目和本地）、自动内存、路径范围规则、MCP 工具名称、通过 ToolSearch 的延迟工具定义、对话历史记录、文件读取、命令输出、工具结果、subagent摘要和紧凑摘要。</p></div>
+
+<div class="bilingual-pair"><p class="src">7.1</p><p class="dst">7.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Context Window Assembly</p><p class="dst">上下文窗口组件</p></div>
+
+<div class="bilingual-pair"><p class="src">The context window (Figure 6) is assembled from the following sources, some at initial assembly and others injected late during the turn:</p><p class="dst">上下文窗口（图 6）由以下来源组装而成，一些是在初始组装时进行的，另一些是在回合后期注入的：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. System prompt, incorporating output style modifications and any --append-system-prompt flag content.</p><p class="dst">1. 系统提示符，包含输出样式修改和任何 --append-system-prompt 标志内容。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Environment info via getSystemContext() (context.ts): git status (skipped in remote mode or when git instructions are disabled) and an optional cache-breaking injection for internal builds (gated by BREAK_CACHE_COMMAND). Memoized once per session.</p><p class="dst">2. 通过 getSystemContext() (context.ts) 获取环境信息：git 状态（在远程模式下或禁用 git 指令时跳过）和用于内部构建的可选缓存破坏注入（由 BREAK_CACHE_COMMAND 控制）。每个会话记住一次。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. CLAUDE.md hierarchy via getUserContext() (context.ts): four-level instruction file hierarchy (Sec- tion 7.2). Also memoized.</p><p class="dst">3. 通过 getUserContext() (context.ts) 的 CLAUDE.md 层次结构：四级指令文件层次结构（第 7.2 节）。也记下来了。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Path-scoped rules: conditional and directory-matched rules that load lazily when the agent reads files in matching directories.</p><p class="dst">4. 路径范围规则：当代理读取匹配目录中的文件时延迟加载的条件和目录匹配规则。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Auto memory: contextually relevant memory entries prefetched asynchronously.</p><p class="dst">5. 自动内存：异步预取上下文相关的内存条目。</p></div>
+
+<div class="bilingual-pair"><p class="src">6. Tool metadata: skill descriptions, MCP tool names, and deferred tool definitions (via ToolSearch, on demand).</p><p class="dst">6. 工具元数据：技能描述、MCP 工具名称和延迟工具定义（通过 ToolSearch，按需）。</p></div>
+
+<div class="bilingual-pair"><p class="src">7. Conversation history: carried forward, subject to compaction.</p><p class="dst">7. 对话历史：结转，需压缩。</p></div>
+
+<div class="bilingual-pair"><p class="src">8. Tool results: file reads, command outputs, subagent summaries.</p><p class="dst">8. 工具结果：文件读取、命令输出、subagent摘要。</p></div>
+
+<div class="bilingual-pair"><p class="src">9. Compact summaries: replacing older history segments.</p><p class="dst">9. 紧凑摘要：替换旧的历史片段。</p></div>
+
+<div class="bilingual-pair"><p class="src">The system prompt assembly at query.ts combines system context with the base prompt via asSystem- Prompt(appendSystemContext(systemPrompt, systemContext))(). User context (CLAUDE.md and date) is prepended to the message array via prependUserContext(). This separation means CLAUDE.md content occupies a different structural position in the API request than the system prompt, potentially affecting model attention patterns.</p><p class="dst">query.ts 中的系统提示组件通过 asSystemPrompt(appendSystemContext(systemPrompt, systemContext))() 将系统上下文与基本提示结合起来。用户上下文（CLAUDE.md 和日期）通过 prependUserContext() 添加到消息数组之前。这种分离意味着 CLAUDE.md 内容在 API 请求中占据与系统提示不同的结构位置，可能会影响模型注意力模式。</p></div>
+
+<div class="bilingual-pair"><p class="src">Several context sources are injected late, after the main window is constructed: relevant-memory prefetch 19 (query.ts), MCP instructions deltas (only new or changed server instructions), agent listing deltas, and background agent task notifications. The context window is therefore not static at assembly time but can grow during the turn.</p><p class="dst">在构建主窗口之后，稍后注入多个上下文源：相关内存预取 19 (query.ts)、MCP 指令增量（仅新的或更改的服务器指令）、代理列表增量和后台代理任务通知。因此，上下文窗口在组装时不是静态的，而是可以在转动过程中增长。</p></div>
+
+<div class="bilingual-pair"><p class="src">7.2</p><p class="dst">7.2</p></div>
+
+<div class="bilingual-pair"><p class="src">CLAUDE.md Hierarchy and Auto Memory</p><p class="dst">CLAUDE.md 层次结构和自动内存</p></div>
+
+<div class="bilingual-pair"><p class="src">A design principle shapes the memory system: stored context should be inspectable and editable by the user.</p><p class="dst">记忆系统的设计原则是：存储的上下文应该可由用户检查和编辑。</p></div>
+
+<div class="bilingual-pair"><p class="src">CLAUDE.md files are plain-text Markdown rather than structured configuration or opaque database entries.</p><p class="dst">CLAUDE.md 文件是纯文本 Markdown，而不是结构化配置或不透明的数据库条目。</p></div>
+
+<div class="bilingual-pair"><p class="src">This transparency choice trades expressiveness for auditability: users can directly inspect and edit the memory files they control, and project-level memory can be version-controlled alongside the codebase (Anthropic, 2026i; MindStudio Team, 2026). Alternative memory architectures illustrate the trade-off. Retrieval-augmented approaches use embedding-based lookup to surface relevant prior context, gaining flexibility at the cost of inspectability: the user cannot easily see or edit what the retrieval system considers relevant. Database-backed memory offers structured querying but requires additional infrastructure and is opaque to version control.</p><p class="dst">这种透明度选择以表达力换取可审计性：用户可以直接检查和编辑他们控制的内存文件，项目级内存可以与代码库一起进行版本控制（Anthropic，2026i；MindStudio Team，2026）。替代内存架构说明了这种权衡。检索增强方法使用基于嵌入的查找来显示相关的先验上下文，以牺牲可检查性为代价获得灵活性：用户无法轻松查看或编辑检索系统认为相关的内容。数据库支持的内存提供结构化查询，但需要额外的基础设施，并且对版本控制不透明。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s file-based approach makes these memory surfaces readable and editable, even though other context sources still enter through the system prompt, tools, hooks, MCP servers, and runtime state. The system does not use embeddings or a vector similarity index for memory retrieval; instead it uses an LLM-based scan of memory-file headers to select up to five relevant files on demand, surfacing them at file granularity rather than entry granularity. Embedding-based systems can retrieve individual entries more selectively, at the cost of inspectability and the infrastructure needed to maintain an index.</p><p class="dst">Claude Code 基于文件的方法使这些内存表面可读和可编辑，即使其他上下文源仍然通过系统提示符、工具、挂钩、MCP 服务器和运行时状态进入。该系统不使用嵌入或向量相似性索引来进行内存检索；相反，它使用基于 LLM 的内存文件头扫描来按需选择最多五个相关文件，以文件粒度而不是条目粒度来显示它们。基于嵌入的系统可以更有选择性地检索单个条目，但代价是可检查性和维护索引所需的基础设施。</p></div>
+
+<div class="bilingual-pair"><p class="src">CLAUDE.md files follow a multi-level loading hierarchy. The source header (claudemd.ts) defines four memory types:</p><p class="dst">CLAUDE.md 文件遵循多级加载层次结构。源头（claudemd.ts）定义了四种内存类型：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Managed memory (e.g. /etc/claude-code/CLAUDE.md on Linux): OS-level policy for all users.</p><p class="dst">1. 托管内存（例如 Linux 上的 /etc/claude-code/CLAUDE.md）：适用于所有用户的操作系统级策略。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. User memory (~/.claude/CLAUDE.md): private global instructions.</p><p class="dst">2. 用户内存（~/.claude/CLAUDE.md）：私有全局指令。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Project memory (CLAUDE.md, .claude/CLAUDE.md, and .claude/rules/*.md in project roots): in- structions checked into the codebase.</p><p class="dst">3. 项目内存（项目根目录中的 CLAUDE.md、.claude/CLAUDE.md 和 .claude/rules/*.md）：签入代码库的指令。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Local memory (CLAUDE.local.md in project roots): gitignored, for private project-specific instructions.</p><p class="dst">4. 本地内存（项目根目录中的 CLAUDE.local.md）：gitignored，用于私有项目特定指令。</p></div>
+
+<div class="bilingual-pair"><p class="src">File discovery traverses from the current directory up to root, checking for all project and local memory files in each directory. Files closer to the current directory have higher priority (loaded later).</p><p class="dst">文件发现从当前目录一直遍历到根目录，检查每个目录中的所有项目和本地内存文件。靠近当前目录的文件具有更高的优先级（稍后加载）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Files load in “reverse order of priority”: later-loaded files receive more model attention. For root-to-CWD directories, unconditional rules from .claude/rules/*.md load eagerly at startup. For nested directories below CWD, even unconditional rules are loaded lazily when the agent reads files in matching directories. This means the model’s instruction set can evolve during a conversation as new parts of the codebase are explored.</p><p class="dst">文件以“优先级相反的顺序”加载：稍后加载的文件会受到更多的模型关注。对于根到 CWD 目录，来自 .claude/rules/*.md 的无条件规则在启动时会立即加载。对于 CWD 以下的嵌套目录，当代理读取匹配目录中的文件时，即使是无条件规则也会延迟加载。这意味着随着代码库新部分的探索，模型的指令集可以在对话过程中不断发展。</p></div>
+
+<div class="bilingual-pair"><p class="src">CLAUDE.md content is delivered as user context (a user message), not as system prompt content (context.ts).</p><p class="dst">CLAUDE.md 内容作为用户上下文（用户消息）传递，而不是作为系统提示内容（context.ts）传递。</p></div>
+
+<div class="bilingual-pair"><p class="src">This architectural choice has a significant implication: because CLAUDE.md content is delivered as conversa- tional context rather than system-level instructions, model compliance with these instructions is probabilistic rather than guaranteed. Permission rules evaluated in deny-first order (Section 5) provide the deterministic enforcement layer. This creates a deliberate separation between guidance (CLAUDE.md, probabilistic) and enforcement (permission rules, deterministic). The function calls setCachedClaudeMdContent() to cache the loaded content for the auto-mode classifier, to avoid an import cycle between the CLAUDE.md loader and the permission system.</p><p class="dst">这种架构选择具有重要意义：因为 CLAUDE.md 内容是作为会话上下文而不是系统级指令提供的，所以模型对这些指令的合规性是概率性的，而不是保证的。以拒绝优先顺序评估的权限规则（第 5 节）提供了确定性执行层。这在指导（CLAUDE.md，概率性）和执行（许可规则，确定性）之间故意分开。该函数调用 setCachedClaudeMdContent() 来缓存自动模式分类器加载的内容，以避免 CLAUDE.md 加载器和权限系统之间的导入循环。</p></div>
+
+<div class="bilingual-pair"><p class="src">Memory files support an @include directive for modular instruction sets (processMemoryFile() at claudemd.ts).</p><p class="dst">内存文件支持模块化指令集的 @include 指令（claudemd.ts 中的 processMemoryFile()）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Syntax variants include @path, @./relative, @~/home, and @/absolute. The directive works in leaf text nodes only (not inside code blocks). In the implementation, the including file is pushed first and included files are appended after it, circular references are prevented by tracking processed paths, and non-existent files are silently ignored.</p><p class="dst">语法变体包括@path、@./relative、@~/home 和@/absolute。该指令仅适用于叶文本节点（不适用于代码块内）。在实现中，首先推送包含文件，然后追加包含文件，通过跟踪处理的路径来防止循环引用，并且不存在的文件将被静默忽略。</p></div>
+
+<div class="bilingual-pair"><p class="src">7.3</p><p class="dst">7.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Compaction Pipeline</p><p class="dst">压实管道</p></div>
+
+<div class="bilingual-pair"><p class="src">The five-layer compaction pipeline (Section 4.3) implements the “context as bottleneck” principle through graduated compression (query.ts). Rather than a single strategy, Claude Code applies five layers in sequence, each with increasing aggressiveness (three are gated by build-time feature flags and budget reduction by 20 a runtime flag, while auto-compact is user-configurable). This graduated approach contrasts with simpler alternatives such as single-pass truncation (dropping the oldest messages) or a single summarization step. The graduated design reflects a lazy-degradation principle: apply the least disruptive compression first, escalating only when cheaper strategies prove insufficient. The cost of this approach is complexity. Five interacting compression layers, several gated by feature flags, create behavior that is difficult for users to fully predict.</p><p class="dst">五层压缩管道（第 4.3 节）通过分级压缩（query.ts）实现“上下文作为瓶颈”原则。 Claude Code 不是采用单一策略，而是按顺序应用五层，每层都具有越来越大的攻击性（其中三层由构建时功能标志和预算减少 20 个运行时标志来控制，而自动压缩是用户可配置的）。这种分级方法与更简单的替代方法形成对比，例如单遍截断（删除最旧的消息）或单个汇总步骤。分级设计反映了惰性降级原则：首先应用破坏性最小的压缩，只有当更便宜的策略证明不够时才升级。这种方法的成本是复杂性。五个交互的压缩层（其中几个由功能标志控制）会创建用户难以完全预测的行为。</p></div>
+
+<div class="bilingual-pair"><p class="src">Auto-compact produces a visible summary in the transcript, and microcompact emits a boundary marker, but context collapse operates without user-visible output. Simpler single-pass approaches sacrifice information but are easier to reason about.</p><p class="dst">自动压缩会在记录中生成可见的摘要，而微型压缩会发出边界标记，但上下文折叠会在没有用户可见的输出的情况下进行操作。更简单的单遍方法会牺牲信息，但更容易推理。</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Budget reduction (runtime flag): per-tool-result size limits.</p><p class="dst">1. 预算减少（运行时标志）：每个工具结果的大小限制。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Snip (HISTORY_SNIP): lightweight older-history trimming.</p><p class="dst">2. Snip (HISTORY_SNIP)：轻量级旧历史修剪。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Microcompact (CACHED_MICROCOMPACT): fine-grained cache-aware compression.</p><p class="dst">3. Microcompact (CACHED_MICROCOMPACT)：细粒度缓存感知压缩。</p></div>
+
+<div class="bilingual-pair"><p class="src">4. Context collapse (CONTEXT_COLLAPSE): read-time virtual projection over history.</p><p class="dst">4. 上下文折叠（CONTEXT_COLLAPSE）：读取时对历史的虚拟投影。</p></div>
+
+<div class="bilingual-pair"><p class="src">5. Auto-compact (enabled by default, can be disabled): full model-generated summary.</p><p class="dst">5. Auto-compact（默认启用，可以禁用）：完整模型生成的摘要。</p></div>
+
+<div class="bilingual-pair"><p class="src">The buildPostCompactMessages() function (compact.ts) returns the following compacted output structure:</p><p class="dst">buildPostCompactMessages() 函数 (compact.ts) 返回以下压缩输出结构：</p></div>
+
+<div class="bilingual-pair"><p class="src">[boundaryMarker, ...summaryMessages, ...messagesToKeep, ...attachments, ...hookResults]. The bound- ary marker is annotated with preserved-segment metadata via annotateBoundaryWithPreservedSegment(), recording headUuid, anchorUuid, and tailUuid to enable read-time chain patching. This mostly-append design means compaction never modifies or deletes previously written transcript lines; it only appends new boundary and summary events.</p><p class="dst">[boundaryMarker、...summaryMessages、...messagesToKeep、...附件、...hookResults]。边界标记通过 annotateBoundaryWithPreservedSegment() 用保留段元数据进行注释，记录 headUuid、anchorUuid 和 tailUuid 以启用读取时间链修补。这种主要是附加的设计意味着压缩永远不会修改或删除以前编写的转录行；它仅附加新的边界和摘要事件。</p></div>
+
+<div class="bilingual-pair"><p class="src">The compaction function compactConversation() (compact.ts) includes several design choices. Pre-compact hooks fire first, allowing hook-injected custom instructions. A GrowthBook feature flag controls whether the compaction path reuses the main conversation’s prompt cache (a code comment documents a January 2026 experiment: “false path is 98% cache miss, costs ∼0.76% of fleet cache_creation”). After compaction, attachment builders re-announce runtime state (plans, skills, and async agents) from live app state, since compaction discards prior attachment messages but not the underlying state.</p><p class="dst">压缩函数compactConversation() (compact.ts) 包括多种设计选择。预压缩钩子首先触发，允许钩子注入自定义指令。 GrowthBook 功能标志控制压缩路径是否重用主对话的提示缓存（代码注释记录了 2026 年 1 月的实验：“错误路径是 98% 的缓存未命中，成本约为舰队缓存_创建的 0.76%”）。压缩后，附件构建器从实时应用程序状态重新宣布运行时状态（计划、技能和异步代理），因为压缩会丢弃先前的附件消息，但不会丢弃底层状态。</p></div>
+
+<div class="bilingual-pair"><p class="src">Context isolation becomes more critical when the system delegates work to subagents, each operating in its own bounded context window.</p><p class="dst">当系统将工作委托给subagent（每个subagent都在自己的有界上下文窗口中运行）时，上下文隔离变得更加重要。</p></div>
+
+<div class="bilingual-pair"><p class="src">8</p><p class="dst">8</p></div>
+
+<div class="bilingual-pair"><p class="src">Subagent Delegation and Orchestration</p><p class="dst">subagent委派和编排</p></div>
+
+<div class="bilingual-pair"><p class="src">Multi-agent orchestration is a key design dimension for coding agents, with choices spanning parent-child hierarchies, peer-based conversation frameworks (Wu et al., 2024), and graph-structured workflow en- gines (LangChain, Inc., 2024). Claude Code’s delegation architecture implements the isolated subagent boundaries principle from Table 1, together with aspects of deny-first with human escalation (permission override) and reversibility-weighted risk assessment (subagent tool restrictions).</p><p class="dst">多代理编排是coding agent的一个关键设计维度，其选择涵盖父子层次结构、基于对等的对话框架（Wu et al., 2024）和图结构工作流引擎（LangChain, Inc., 2024）。 Claude Code 的委托架构实现了表 1 中的隔离subagent边界原则，以及拒绝优先、人工升级（权限覆盖）和可逆性加权风险评估（subagent工具限制）等方面。</p></div>
+
+<div class="bilingual-pair"><p class="src">When Claude determines that the auth test fix requires first exploring the authentication module’s structure, it can delegate this exploration to a subagent. The delegation mechanism is the Agent tool (AgentTool.tsx), with Task retained as a legacy alias. The model invokes Agent with a structured input including the delegation prompt, an optional subagent type, and configuration for isolation mode, permission overrides, and working directory.</p><p class="dst">当 Claude 确定身份验证测试修复需要首先探索身份验证模块的结构时，它可以将此探索委托给subagent。委托机制是Agent 工具 (AgentTool.tsx)，任务保留为旧别名。该模型使用结构化输入调用代理，包括委托提示、可选的subagent类型以及隔离模式、权限覆盖和工作目录的配置。</p></div>
+
+<div class="bilingual-pair"><p class="src">8.1</p><p class="dst">8.1</p></div>
+
+<div class="bilingual-pair"><p class="src">The Agent Tool and Delegation Criteria</p><p class="dst">Agent 工具和委派标准</p></div>
+
+<div class="bilingual-pair"><p class="src">The Agent tool input schema (Figure 7) uses feature-gated fields, omitting optional parameters when their backing features are disabled. The isolation field offers [’worktree’, ’remote’] for internal users and [’worktree’] for external users, determined at build time. The cwd field is gated by a feature flag. The run_in_background field is omitted when background tasks are disabled or when fork-subagent mode is enabled.</p><p class="dst">Agent 工具输入架构（图 7）使用功能门控字段，在禁用其支持功能时省略可选参数。隔离字段为内部用户提供[‘worktree’、‘remote’]，为外部用户提供[‘worktree’]，在构建时确定。 cwd 字段由功能标志控制。当禁用后台任务或启用 fork-sub-agent 模式时，将省略 run_in_background 字段。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code provides up to six built-in subagent types, depending on feature flags and entrypoint:</p><p class="dst">Claude Code 提供多达六种内置subagent类型，具体取决于功能标志和入口点：</p></div>
+
+<div class="bilingual-pair"><p class="src">• Explore: primarily read/search-oriented investigation, with write and edit tools in its deny-list.</p><p class="dst">• 探索：主要以读取/搜索为导向的调查，在其拒绝列表中包含写入和编辑工具。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Plan: creates structured plans; execution proceeds through the standard permission model.</p><p class="dst">• 计划：创建结构化计划；执行通过标准权限模型进行。</p></div>
+
+<div class="bilingual-pair"><p class="src">21</p><p class="dst">21</p></div>
+
+<div class="bilingual-pair"><p class="src">Agent</p><p class="dst">代理</p></div>
+
+<div class="bilingual-pair"><p class="src">Task=legacy alias</p><p class="dst">任务=旧别名</p></div>
+
+<div class="bilingual-pair"><p class="src">Explore</p><p class="dst">探索</p></div>
+
+<div class="bilingual-pair"><p class="src">Plan</p><p class="dst">计划</p></div>
+
+<div class="bilingual-pair"><p class="src">General</p><p class="dst">一般</p></div>
+
+<div class="bilingual-pair"><p class="src">Custom</p><p class="dst">定制</p></div>
+
+<div class="bilingual-pair"><p class="src">Other Built-in Tools</p><p class="dst">其他内置工具</p></div>
+
+<div class="bilingual-pair"><p class="src">statusline, verification + Isolation Sandbox Context isolated for each subagent 1) Rebuilt Permission Context &amp; Tool Set 2) Permission Mode Override (optional) 3) Isolated Worktree Isolated Subagent Context Subagent Transcript .jsonl + meta.json Subagent Report text + metadata Main Conversation Main Transcript Read &amp; Write Insert Result Delegates Figure 7 Subagent isolation and delegation architecture. The Agent tool dispatches to built-in subagents (Explore, Plan, general-purpose) or custom subagents, each running in an isolated context with rebuilt permission context and independent tool sets. The Agent tool dispatches along three axes: routing (teammate), isolation (remote, worktree), and lifecycle (async, sync).</p><p class="dst">状态行、验证 + 隔离 为每个subagent隔离沙盒上下文 1) 重建权限上下文和工具集 2) 权限模式覆盖（可选） 3) 隔离工作树 隔离subagent上下文 subagent记录 .jsonl + meta.json subagent报告文本 + 元数据 主要对话 主记录读取和写入 插入结果委托 图 7 subagent隔离和委托架构。Agent 工具分派到内置subagent（探索、计划、通用）或自定义subagent，每个subagent都在具有重建权限上下文和独立工具集的隔离上下文中运行。 Agent 工具沿着三个轴进行调度：路由（队友）、隔离（远程、工作树）和生命周期（异步、同步）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• General-purpose: broadly capable, used when explicitly requested (note: omitting the type may route to the fork-subagent path instead, which reuses the parent’s conversation context rather than isolating it).</p><p class="dst">• 通用：功能广泛，在明确请求时使用（注意：省略类型可能会路由到 fork-sub-agent 路径，该路径会重用父级的对话上下文而不是隔离它）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Claude Code Guide: onboarding and documentation assistance, with its own permissionMode override.</p><p class="dst">• Claude 代码指南：入门和文档帮助，具有自己的权限模式覆盖。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Verification: runs validation checks (test suites, linting).</p><p class="dst">• 验证：运行验证检查（测试套件、linting）。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Statusline-setup: specialized for terminal status line configuration.</p><p class="dst">• Statusline-setup：专门用于终端状态线配置。</p></div>
+
+<div class="bilingual-pair"><p class="src">Beyond built-ins, users define custom subagents via .claude/agents/*.md files, and plugins contribute agent definitions via loadPluginAgents.ts. The markdown body of each file serves as the agent’s system prompt, and YAML frontmatter specifies configuration fields including description, tools (allowlist), disallowedTools, model, effort, permissionMode, mcpServers, hooks, maxTurns, skills, memory scope, background flag, and isolation mode. JSON-formatted agent definitions support the same fields plus prompt as an explicit field (loadAgentsDir.ts). This means a custom agent can be a fully configured, isolated sub-system with its own tools, model, permissions, hooks, memory scope, and isolation mode. AgentTool sits alongside SkillTool in the base tool pool as a meta-tool that dispatches to these definitions, but the two differ fundamentally:</p><p class="dst">除了内置插件之外，用户还可以通过 .claude/agents/*.md 文件定义自定义subagent，而插件则通过 loadPluginAgents.ts 提供代理定义。每个文件的 markdown 正文作为代理的系统提示符，YAML frontmatter 指定配置字段，包括描述、工具（白名单）、disallowedTools、模型、工作量、permissionMode、mcpServers、hooks、maxTurns、技能、内存范围、后台标志和隔离模式。 JSON 格式的代理定义支持与显式字段 (loadAgentsDir.ts) 相同的字段和提示。这意味着自定义代理可以是一个完全配置的、隔离的子系统，具有自己的工具、模型、权限、挂钩、内存范围和隔离模式。 AgentTool 与 SkillTool 一起位于基础工具池中，作为分派这些定义的元工具，但两者有根本的不同：</p></div>
+
+<div class="bilingual-pair"><p class="src">SkillTool typically injects instructions into the current context window (with an opt-in context: fork mode that spawns an isolated sub-agent via the same runAgent() machinery), while AgentTool always spawns a new, isolated one. The tradeoff is that most subagent invocations require a self-contained prompt, because the default path does not inherit the parent’s conversation history (the fork-subagent path is an exception).</p><p class="dst">SkillTool 通常将指令注入当前上下文窗口（使用选择加入上下文：fork 模式，通过相同的 runAgent() 机制生成一个隔离的subagent），而 AgentTool 始终生成一个新的、隔离的subagent。代价是大多数subagent调用需要一个独立的提示，因为默认路径不会继承父代理的对话历史记录（fork-sub-agent 路径是一个例外）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Conversation-based frameworks that share full transcript histories avoid this cost but risk context explosion as the number of agents grows.</p><p class="dst">共享完整记录历史的基于对话的框架避免了这种成本，但随着代理数量的增长，存在上下文爆炸的风险。</p></div>
+
+<div class="bilingual-pair"><p class="src">8.2</p><p class="dst">8.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Isolation Architecture</p><p class="dst">隔离架构</p></div>
+
+<div class="bilingual-pair"><p class="src">Subagent isolation supports multiple modes (AgentTool.tsx):</p><p class="dst">subagent隔离支持多种模式（AgentTool.tsx）：</p></div>
+
+<div class="bilingual-pair"><p class="src">• Worktree: Creates a temporary git worktree, giving the subagent its own copy of the repository to modify without affecting the parent’s working tree.</p><p class="dst">• 工作树：创建临时 git 工作树，为subagent提供自己的存储库副本以进行修改，而不会影响父代理的工作树。</p></div>
+
+<div class="bilingual-pair"><p class="src">• Remote (internal-only): Launches in a remote Claude Code Remote environment, always running in the background.</p><p class="dst">• 远程（仅限内部）：在远程Claude Code Remote 环境中启动，始终在后台运行。</p></div>
+
+<div class="bilingual-pair"><p class="src">• In-process (default): Shares the filesystem with the parent but operates in an isolated conversation context.</p><p class="dst">• 进程内（默认）：与父级共享文件系统，但在隔离的对话上下文中运行。</p></div>
+
+<div class="bilingual-pair"><p class="src">The permission override logic for subagents (runAgent.ts) involves several specific rules. When a subagent 22 defines a permissionMode, the override is applied unless the parent is already in bypassPermissions, ac- ceptEdits, or auto mode, since those modes always take precedence because they represent explicit user decisions about the safety/autonomy trade-off. For async agents, the system determines whether to avoid prompts through a cascade: explicit canShowPermissionPrompts first, then bubble mode (always show, since they escalate to the parent terminal), then the default (sync agents show prompts, async agents do not). Background agents that can show prompts set awaitAutomatedChecksBeforeDialog: true, ensuring the classifier and hooks resolve before interrupting the user.</p><p class="dst">subagent (runAgent.ts) 的权限覆盖逻辑涉及几个特定规则。当subagent22定义permissionMode时，除非父代理已经处于bypassPermissions、acceptEdits或自动模式，否则应用覆盖，因为这些模式总是优先，因为它们代表关于安全/自主权衡的明确用户决定。对于异步代理，系统通过级联确定是否避免提示：首先显式 canShowPermissionPrompts，然后是冒泡模式（始终显示，因为它们升级到父终端），然后是默认模式（同步代理显示提示，异步代理不显示提示）。可以显示提示的后台代理设置了awaitAutomatedChecksBeforeDialog: true，确保分类器和挂钩在中断用户之前解析。</p></div>
+
+<div class="bilingual-pair"><p class="src">These isolation modes occupy different points in a design space. Container-based isolation (used by SWE-Agent and OpenHands (Yang et al., 2024; Wang et al., 2024b)) provides stronger resource boundaries but requires container infrastructure. Context-only isolation (used by conversation-based frameworks like AutoGen (Wu et al., 2024)) shares the filesystem but separates conversation histories. Claude Code’s worktree-based isolation provides workspace-level filesystem separation without introducing container orchestration, leveraging Git’s built-in mechanism.</p><p class="dst">这些隔离模式占据设计空间中的不同点。基于容器的隔离（由 SWE-Agent 和 OpenHands 使用（Yang 等人，2024；Wang 等人，2024b））提供了更强的资源边界，但需要容器基础设施。仅上下文隔离（由 AutoGen（Wu 等人，2024）等基于对话的框架使用）共享文件系统，但分离对话历史记录。 Claude Code 基于工作树的隔离利用 Git 的内置机制，提供工作区级别的文件系统分离，而无需引入容器编排。</p></div>
+
+<div class="bilingual-pair"><p class="src">When allowedTools is explicitly provided to runAgent() (runAgent.ts), a two-tier permission scoping model applies. SDK-level permissions from --allowedTools are preserved: “explicit permissions from the SDK consumer that should apply to all agents.” But session-level rules are replaced with the subagent’s declared allowedTools. When allowedTools is not provided (the common AgentTool path), the parent’s session-level rules are inherited without replacement.</p><p class="dst">当 allowedTools 显式提供给 runAgent() (runAgent.ts) 时，将应用两层权限范围模型。保留 --allowedTools 中的 SDK 级别权限：“来自 SDK 使用者的显式权限应适用于所有代理。”但会话级规则被subagent声明的 allowedTools 所取代。当未提供 allowedTools 时（公共 AgentTool 路径），父级的会话级规则将被继承而无需替换。</p></div>
+
+<div class="bilingual-pair"><p class="src">8.3</p><p class="dst">8.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Sidechain Transcripts</p><p class="dst">侧链转录本</p></div>
+
+<div class="bilingual-pair"><p class="src">Each subagent writes its own transcript as a separate .jsonl file with a .meta.json metadata file (sessionStorage.ts, runAgent.ts). This sidechain design means subagent histories are preserved for debugging and auditing but do not inflate the parent’s session file. Only the subagent’s final response text and metadata return to the parent conversation context; the full subagent history never enters the parent’s context window, respecting the “context as bottleneck” principle.</p><p class="dst">每个subagent将自己的记录写入一个单独的 .jsonl 文件和 .meta.json 元数据文件（sessionStorage.ts、runAgent.ts）。这种侧链设计意味着保留subagent历史记录以供调试和审计，但不会增加父代理的会话文件。只有subagent的最终响应文本和元数据返回到父对话上下文；完整的subagent历史记录永远不会进入父代理的上下文窗口，尊重“上下文作为瓶颈”原则。</p></div>
+
+<div class="bilingual-pair"><p class="src">The summary-only return model is a deliberate context-conservation choice: conversation-based frameworks that share full transcript histories between agents risk context explosion as the number of agents grows. Even isolated-context parallelism carries substantial cost. Claude Code’s agent teams consume approximately 7× the tokens of a standard session in plan mode (Anthropic, 2025b), which makes summary-only return more critical when subagents are also in isolated contexts.</p><p class="dst">仅摘要返回模型是一种有意的上下文保护选择：随着代理数量的增长，在代理之间共享完整转录历史记录的基于对话的框架面临着上下文爆炸的风险。即使是孤立上下文并行也会带来巨大的成本。 Claude Code 的代理团队在计划模式下消耗大约 7 倍的标准会话代币（Anthropic，2025b），这使得当subagent也处于隔离上下文中时，仅摘要返回变得更加重要。</p></div>
+
+<div class="bilingual-pair"><p class="src">For multi-instance coordination in agent teams, the harness uses file locking rather than a message bro- ker or distributed coordination service (Anthropic, 2025b). Each teammate has its own inbox JSON file (utils/teammateMailbox.ts); task assignments and other inter-agent messages are pushed into the recipient’s inbox under a per-inbox lockfile (utils/lockfile.ts), with files stored at predictable filesystem paths. This trades throughput for two properties: zero-dependency deployment (no external infrastructure required) and full debuggability (any agent’s state can be inspected by reading plain-text JSON files).</p><p class="dst">对于代理团队中的多实例协调，harness使用文件锁定而不是消息代理或分布式协调服务（Anthropic，2025b）。每个队友都有自己的收件箱 JSON 文件 (utils/teammateMailbox.ts)；任务分配和其他代理间消息被推送到收件人收件箱中的每个收件箱锁定文件 (utils/lockfile.ts) 下，文件存储在可预测的文件系统路径中。这以吞吐量换取两个属性：零依赖部署（不需要外部基础设施）和完全可调试性（可以通过读取纯文本 JSON 文件来检查任何代理的状态）。</p></div>
+
+<div class="bilingual-pair"><p class="src">9</p><p class="dst">9</p></div>
+
+<div class="bilingual-pair"><p class="src">Session Persistence and Recovery</p><p class="dst">Session Persistence and Recovery</p></div>
+
+<div class="bilingual-pair"><p class="src">Session persistence in coding agents involves a design choice between append-only logs, structured databases, checkpoint-based snapshots, and stateless architectures, each with different trade-offs in auditability, query power, and deployment complexity. Claude Code’s persistence design implements the append-only durable state principle from Table 1. Session-scoped permissions live in memory only and are not serialized to the transcript, so a new process started with --resume rebuilds the permission context from CLI args and disk settings; any request that the rebuilt context does not recognize falls back to deny-first prompting.</p><p class="dst">coding agent中的会话持久性涉及仅附加日志、结构化数据库、基于检查点的快照和无状态架构之间的设计选择，每种架构在可审核性、查询能力和部署复杂性方面都有不同的权衡。 Claude Code 的持久性设计实现了表 1 中的仅追加持久状态原则。会话范围的权限仅存在于内存中，不会序列化到记录中，因此以 --resume 启动的新进程会根据 CLI 参数和磁盘设置重建权限上下文；重建上下文无法识别的任何请求都会回退到拒绝优先提示。</p></div>
+
+<div class="bilingual-pair"><p class="src">By the time the auth-test task reaches this section, the session contains the original prompt, tool invocations and results, compact boundaries, and the subagent summary from exploring the authentication module (Section 8). This section asks which of those artifacts are durably recorded and what can be recovered later without carrying forward the session’s old permission grants.</p><p class="dst">当身份验证测试任务到达此部分时，会话包含原始提示、工具调用和结果、紧凑边界以及探索身份验证模块的subagent摘要（第 8 节）。本节询问哪些工件是持久记录的，以及哪些工件可以在以后恢复而无需继承会话的旧权限授予。</p></div>
+
+<div class="bilingual-pair"><p class="src">23</p><p class="dst">23</p></div>
+
+<div class="bilingual-pair"><p class="src">Session ID</p><p class="dst">会话ID</p></div>
+
+<div class="bilingual-pair"><p class="src">Context</p><p class="dst">背景</p></div>
+
+<div class="bilingual-pair"><p class="src">Window</p><p class="dst">窗户</p></div>
+
+<div class="bilingual-pair"><p class="src">Durable</p><p class="dst">耐用</p></div>
+
+<div class="bilingual-pair"><p class="src">Storage</p><p class="dst">存储</p></div>
+
+<div class="bilingual-pair"><p class="src">Session</p><p class="dst">会议</p></div>
+
+<div class="bilingual-pair"><p class="src">Transcript</p><p class="dst">成绩单</p></div>
+
+<div class="bilingual-pair"><p class="src">.jsonl History / Subagent Logs Checkpoints Old Tool Outputs Compaction Flow 1) Remove 2) Generate Session Summary 3) Mark Compact Boundary Rewind Resume Fork Near Capacity Conversation Principle Description Conversations Outlive Context A session’s useful life cannot be capped by the model’s context window. The transcript on disk records durable session events, so compaction can recycle the live view without ending the conversation.</p><p class="dst">.jsonl 历史/subagent日志 检查点 旧工具输出 压缩流程 1) 删除 2) 生成会话摘要 3) 标记紧凑边界 回滚恢复 Fork 接近容量 对话原理 描述 对话 过时上下文 会话的使用寿命不能被模型的上下文窗口限制。磁盘上的记录记录了持久的会话事件，因此压缩可以在不结束对话的情况下回收实时视图。</p></div>
+
+<div class="bilingual-pair"><p class="src">Conversations</p><p class="dst">对话</p></div>
+
+<div class="bilingual-pair"><p class="src">Outgrow a Single</p><p class="dst">长大后不再单身</p></div>
+
+<div class="bilingual-pair"><p class="src">Path</p><p class="dst">路径</p></div>
+
+<div class="bilingual-pair"><p class="src">A session should not be trapped</p><p class="dst">会话不应该被捕获</p></div>
+
+<div class="bilingual-pair"><p class="src">on a single linear trajectory. The append-only transcript lets users rewind, resume, or fork into a new branch without losing prior work.</p><p class="dst">在单一线性轨迹上。仅附加副本允许用户倒回、恢复或分叉到新分支，而不会丢失之前的工作。</p></div>
+
+<div class="bilingual-pair"><p class="src">Figure 8 Session persistence and context compaction. The diagram separates live session state (context window, compaction) from durable storage (session transcripts, history.jsonl, subagent sidechains, checkpoints). The transcript restores messages but not session-scoped permissions.</p><p class="dst">图 8 会话持久性和上下文压缩。该图将实时会话状态（上下文窗口、压缩）与持久存储（会话记录、history.jsonl、subagent侧链、检查点）分开。脚本恢复消息，但不恢复会话范围的权限。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s persistence mechanisms write the conversation (messages, tool results, and compact boundaries) to disk as events occur.</p><p class="dst">当事件发生时，Claude Code 的持久性机制将对话（消息、工具结果和紧凑边界）写入磁盘。</p></div>
+
+<div class="bilingual-pair"><p class="src">9.1</p><p class="dst">9.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Transcript Model</p><p class="dst">转录模型</p></div>
+
+<div class="bilingual-pair"><p class="src">Session transcripts are stored as mostly append-only JSONL files at a project-specific path (with explicit cleanup rewrites as an exception) (Figure 8). The getTranscriptPath() function (sessionStorage.ts) com- putes this as join(projectDir, ${getSessionId()}.jsonl), where projectDir is determined by first checking getSessionProjectDir() (set by switchSession() during resume/branch) and falling back to getProject- Dir(getOriginalCwd())().</p><p class="dst">会话记录主要以仅附加 JSONL 文件的形式存储在项目特定的路径中（显式清理重写作为例外）（图 8）。 getTranscriptPath() 函数 (sessionStorage.ts) 将其计算为 join(projectDir, ${getSessionId()}.jsonl)，其中 projectDir 通过首先检查 getSessionProjectDir() （在恢复/分支期间由 switchSession() 设置）并回退到 getProjectDir(getOriginalCwd())() 来确定。</p></div>
+
+<div class="bilingual-pair"><p class="src">Three persistence channels operate independently:</p><p class="dst">三个持久通道独立运行：</p></div>
+
+<div class="bilingual-pair"><p class="src">1. Session transcripts: Conversation records including user, assistant, attachment, and system messages, plus compaction and other metadata events. Project-scoped, one file per session.</p><p class="dst">1. 会话记录：对话记录，包括用户、助理、附件和系统消息，以及压缩和其他元数据事件。项目范围内，每个会话一个文件。</p></div>
+
+<div class="bilingual-pair"><p class="src">2. Global prompt history: User prompts only, stored in history.jsonl at the Claude configuration home directory (history.ts). The makeHistoryReader() generator yields entries in reverse order via readLi- nesReverse(), supporting Up-arrow and ctrl+r navigation.</p><p class="dst">2. 全局提示历史记录：仅限用户提示，存储在 Claude 配置主目录 (history.ts) 的 History.jsonl 中。 makeHistoryReader() 生成器通过 readLinesReverse() 以相反的顺序生成条目，支持向上箭头和 ctrl+r 导航。</p></div>
+
+<div class="bilingual-pair"><p class="src">3. Subagent sidechains: Separate .jsonl + .meta.json files per subagent (Section 8.3).</p><p class="dst">3. subagent侧链：每个subagent单独的 .jsonl + .meta.json 文件（第 8.3 节）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Session transcripts store several kinds of events beyond simple messages, including compaction markers, file- history snapshots, attribution snapshots, and content-replacement records. The append-only JSONL format is a deliberate choice favoring auditability and simplicity over query power. Every logged event is human-readable, version-controllable, and inspectable without specialized tooling. Database-backed alternatives would enable richer queries over session history but introduce deployment dependencies and reduce transparency.</p><p class="dst">会话记录除了简单的消息之外还存储多种事件，包括压缩标记、文件历史快照、属性快照和内容替换记录。仅附加 JSONL 格式是一个经过深思熟虑的选择，它有利于可审计性和简单性，而不是查询能力。每个记录的事件都是人类可读的、版本可控的，并且无需专门的工具即可检查。数据库支持的替代方案可以对会话历史记录进行更丰富的查询，但会引入部署依赖性并降低透明度。</p></div>
+
+<div class="bilingual-pair"><p class="src">The session identity system pairs sessionId with sessionProjectDir, set together during resume or branch.</p><p class="dst">会话标识系统将 sessionId 与 sessionProjectDir 配对，在恢复或分支期间设置在一起。</p></div>
+
+<div class="bilingual-pair"><p class="src">The transcript path must use the same project directory that was active when messages were written, to avoid hooks looking in the wrong directory.</p><p class="dst">脚本路径必须使用与写入消息时处于活动状态的相同项目目录，以避免挂钩在错误的目录中查找。</p></div>
+
+<div class="bilingual-pair"><p class="src">9.2</p><p class="dst">9.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Resume, Fork, and Not Restoring Permissions</p><p class="dst">恢复、分叉和不恢复权限</p></div>
+
+<div class="bilingual-pair"><p class="src">The --resume flag rebuilds the conversation by replaying the transcript (conversationRecovery.ts). Fork creates a new session from an existing one (commands/branch/branch.ts). However, the transcript does not record session-scoped permissions. Resuming with --resume starts a new process without them, so users must grant them again; resuming or forking inside a running session keeps the grants already given. This is a deliberate safety-conservative design choice: trust decisions are not carried in the transcript. Restoring previously granted permissions from the transcript would create a convenience benefit but risk carrying stale trust decisions into a changed context. The architecture opts for re-granting in a new process over implicit persistence, accepting the resulting user friction.</p><p class="dst">--resume 标志通过重播记录 (conversationRecovery.ts) 来重建对话。 Fork 从现有会话 (commands/branch/branch.ts) 创建一个新会话。但是，记录不记录会话范围的权限。使用 --resume 恢复会在没有它们的情况下启动一个新进程，因此用户必须再次授予它们；在正在运行的会话中恢复或分叉会保留已授予的权限。这是一个经过深思熟虑的安全保守设计选择：信任决策不包含在记录中。从记录中恢复先前授予的权限将带来便利，但存在将过时的信任决策带入已更改环境的风险。该架构选择在新进程中重新授予而不是隐式持久性，接受由此产生的用户摩擦。</p></div>
+
+<div class="bilingual-pair"><p class="src">24</p><p class="dst">24</p></div>
+
+<div class="bilingual-pair"><p class="src">The compact_boundary marker is carefully designed to work with persistence. The annotateBoundaryWith- PreservedSegment() function (compact.ts) records headUuid, anchorUuid, and tailUuid in the boundary event. These UUIDs enable the session loader to patch the message chain at read time: preserved messages keep their original parentUuids on disk, and the loader uses boundary metadata to link them correctly. This mostly-append design means compaction does not modify or delete previously written transcript lines.</p><p class="dst">Compact_boundary 标记经过精心设计，可与持久性一起使用。 annotateBoundaryWithPreservedSegment() 函数 (compact.ts) 记录边界事件中的 headUuid、anchorUuid 和 tailUuid。这些 UUID 使会话加载器能够在读取时修补消息链：保留的消息将其原始父 Uuid 保留在磁盘上，并且加载器使用边界元数据正确链接它们。这种主要是附加的设计意味着压缩不会修改或删除先前写入的转录本行。</p></div>
+
+<div class="bilingual-pair"><p class="src">The “checkpoints” in Claude Code are file-history checkpoints for --rewind-files, stored at ~/.claude/file- history/&lt;sessionId&gt;/. These are file-level snapshots for reverting filesystem changes, not a generic checkpoint store.</p><p class="dst">Claude Code 中的“检查点”是 --rewind-files 的文件历史记录检查点，存储在 ~/.claude/file-history/&lt;sessionId&gt;/ 中。这些是用于恢复文件系统更改的文件级快照，而不是通用检查点存储。</p></div>
+
+<div class="bilingual-pair"><p class="src">The preceding sections have documented Claude Code’s answers to recurring design questions. The next section contrasts Claude Code’s design choices with those of two architecturally independent AI agent systems.</p><p class="dst">前面的部分记录了 Claude Code 对重复出现的设计问题的回答。下一节将 Claude Code 的设计选择与两个架构上独立的人工智能代理系统的设计选择进行对比。</p></div>
+
+<div class="bilingual-pair"><p class="src">10</p><p class="dst">10</p></div>
+
+<div class="bilingual-pair"><p class="src">Comparative Analysis: Claude Code, OpenClaw, and Hermes Agent</p><p class="dst">对比分析：Claude Code、OpenClaw 和 Hermes Agent</p></div>
+
+<div class="bilingual-pair"><p class="src">The preceding sections documented Claude Code’s answers to recurring design questions about loop architecture, safety, extensibility, context management, delegation, and persistence. To situate these findings within the broader agent design space, this section compares Claude Code with two independent open-source AI agent systems that answer many of the same design questions from fundamentally different starting points.</p><p class="dst">前面的部分记录了 Claude Code 对有关循环架构、安全性、可扩展性、上下文管理、委托和持久性的反复出现的设计问题的回答。为了将这些发现置于更广泛的代理设计空间中，本节将 Claude Code 与两个独立的开源人工智能代理系统进行比较，这两个系统从根本不同的起点回答了许多相同的设计问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">OpenClaw is a local-first WebSocket gateway that connects messaging surfaces (WhatsApp, Telegram, Slack, Discord, Signal, and others) to an embedded agent runtime, with companion apps on macOS, iOS, and Android (Steinberger and OpenClaw Contributors, 2026). Hermes Agent is a single Python process whose role is set by the entry point under which it was invoked, with one persistence layer and many surfaces fronting one runtime (Nous Research, 2026).4 The Hermes distribution exposes three console scripts: hermes for the CLI and gateway controller, hermes-agent for batch runs, and hermes-acp for the Agent Client Protocol adapter that lets external IDEs host Hermes the way Hermes’s own gateway can host other agents. Where Claude Code is a CLI coding harness bound to a single repository session, OpenClaw is a persistent control plane for multi-channel personal assistance, and Hermes is one process whose role and surface set are determined by which entry point launched it. The three systems occupy different regions of the agent design space. The value of the comparison lies in showing how the same recurring questions produce different architectural answers when the deployment context changes.</p><p class="dst">OpenClaw 是本地优先的 WebSocket 网关，可将消息传递界面（WhatsApp、Telegram、Slack、Discord、Signal 等）连接到嵌入式代理运行时，以及 macOS、iOS 和 Android 上的配套应用程序（Steinberger 和 OpenClaw Contributors，2026）。 Hermes Agent 是一个单一的 Python 进程，其角色由调用它的入口点设置，具有一个持久层和多个面向一个运行时的表面（Nous Research，2026）。4 Hermes 发行版公开了三个控制台脚本：用于 CLI 和网关控制器的 Hermes、用于批量运行的 Hermes-agent 以及用于代理客户端协议适配器的 Hermes-acp，该适配器允许外部 IDE 以 Hermes 自己的网关托管其他代理的方式托管 Hermes。其中，Claude Code 是绑定到单个存储库会话的 CLI 编码harness，OpenClaw 是用于多渠道个人协助的持久控制平面，而 Hermes 是一个进程，其角色和表面集由启动它的入口点决定。这三个系统占据代理设计空间的不同区域。比较的价值在于展示当部署上下文发生变化时，相同的重复问题如何产生不同的架构答案。</p></div>
+
+<div class="bilingual-pair"><p class="src">10.1</p><p class="dst">10.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Six Comparison Dimensions</p><p class="dst">六个比较维度</p></div>
+
+<div class="bilingual-pair"><p class="src">Table 3 summarizes the comparison across six dimensions. Each dimension corresponds to a design question that all three systems must answer. Hermes capabilities that fall outside these six dimensions are discussed separately in Section 10.2.</p><p class="dst">表 3 总结了六个维度的比较。每个维度都对应一个所有三个系统都必须回答的设计问题。不属于这六个维度的 Hermes 功能将在 10.2 节中单独讨论。</p></div>
+
+<div class="bilingual-pair"><p class="src">System scope and deployment model.</p><p class="dst">系统范围和部署模型。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code runs as an ephemeral CLI process bound to a single</p><p class="dst">Claude Code 作为绑定到单个进程的临时 CLI 进程运行</p></div>
+
+<div class="bilingual-pair"><p class="src">repository. Each session starts and ends with the terminal. OpenClaw runs as a persistent daemon (default port 18789, loopback-only) that owns all messaging surface connections and coordinates clients, tools, and device nodes over a typed WebSocket protocol. Hermes Agent runs as a single long-lived Python process whose role is fixed by the entry point used to launch it; its gateway sub-command drives messaging surfaces through a two-tier adapter system (in-tree adapters under gateway/platforms/ plus a plugin tier under plugins/platforms/ for Google Chat, IRC, and Teams), and it persists session and multi-agent-board state to two on-disk SQLite files (state.db and kanban.db) rather than to a typed WebSocket protocol. This places Hermes closer to OpenClaw than to Claude Code in trust topology but closer to Claude Code than to OpenClaw in process topology; the design question of where to put the broker is answered, in Hermes, with no broker at all. These differences in system scope are the most fundamental architectural divergences in the comparison: they determine how every other design question is framed. A compositional relationship also exists across all three: OpenClaw can host Claude Code, OpenAI Codex, and Gemini CLI as external 4Source-grounded reading of Hermes surfaced two cases where the project’s own documentation has drifted from the implementation: SECURITY.md documents an approval-mode taxonomy of on/auto/off while tools/approval.py:721-750 returns manual/smart/off, and both SECURITY.md and AGENTS.md describe a delegation depth default of two while tools/delegate_- tool.py:128 sets MAX_DEPTH = 1. We cite the source rather than the docs.</p><p class="dst">存储库。每个会话都以终端开始和结束。 OpenClaw 作为持久守护进程运行（默认端口 18789，仅环回），拥有所有消息传递表面连接并通过类型化 WebSocket 协议协调客户端、工具和设备节点。 Hermes Agent 作为单个长期 Python 进程运行，其角色由用于启动它的入口点固定；它的 gateway 子命令通过两层适配器系统（网关/平台/下的树内适配器以及用于 Google Chat、IRC 和 Teams 的插件/平台/下的插件层）驱动消息传递表面，并且它将会话和多代理板状态保留到两个磁盘上的 SQLite 文件（state.db 和 kanban.db），而不是类型化的 WebSocket 协议。这使得 Hermes 在信任拓扑中比 Claude Code 更接近 OpenClaw，但在进程拓扑中比 OpenClaw 更接近 Claude Code；在 Hermes 中，根本没有经纪人就解决了在哪里放置经纪人的设计问题。系统范围的这些差异是比较中最基本的架构差异：它们决定了其他所有设计问题的框架方式。这三者之间也存在组合关系：OpenClaw 可以托管 Claude Code、OpenAI Codex 和 Gemini CLI，因为 Hermes 的外部 4Source 基础阅读出现了两种情况，其中项目自己的文档偏离了实现：SECURITY.md 记录了 on/auto/off 的审批模式分类法，而 tools/approval.py:721-750 返回手动/智能/关闭，并且 SECURITY.md 和AGENTS.md 描述了默认为 2 的委派深度，而 tools/delegate_- tool.py:128 设置 MAX_DEPTH = 1。我们引用源代码而不是文档。</p></div>
+
+<div class="bilingual-pair"><p class="src">25</p><p class="dst">25</p></div>
+
+<div class="bilingual-pair"><p class="src">Table 3 Architectural comparison: Claude Code vs. OpenClaw vs. Hermes Agent across six design dimensions. Each row captures a recurring design question and the different answers the three systems provide.</p><p class="dst">表 3 架构比较：Claude Code、OpenClaw 与 Hermes Agent 跨越六个设计维度。每行捕获一个重复出现的设计问题以及三个系统提供的不同答案。</p></div>
+
+<div class="bilingual-pair"><p class="src">Dimension</p><p class="dst">尺寸</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code</p><p class="dst">Claude·科德</p></div>
+
+<div class="bilingual-pair"><p class="src">OpenClaw</p><p class="dst">开爪</p></div>
+
+<div class="bilingual-pair"><p class="src">Hermes Agent</p><p class="dst">爱马仕代理</p></div>
+
+<div class="bilingual-pair"><p class="src">System scope</p><p class="dst">系统范围</p></div>
+
+<div class="bilingual-pair"><p class="src">CLI/IDE coding harness, ephemeral per-session process</p><p class="dst">CLI/IDE 编码harness，短暂的每会话进程</p></div>
+
+<div class="bilingual-pair"><p class="src">Persistent WS gateway daemon, multi-channel control plane</p><p class="dst">持久 WS 网关守护进程、多通道控制平面</p></div>
+
+<div class="bilingual-pair"><p class="src">Single Python process, role set by</p><p class="dst">单个 Python 进程，角色设置</p></div>
+
+<div class="bilingual-pair"><p class="src">entry point (hermes/hermes-agent/hermes-acp); in-tree plus plugin-tier messaging surfaces; two SQLite files (state.db, kanban.db) for persistence Trust model Deny-first per-action rule evaluation with hooks and optional ML classifier; 7 permission modes; graduated trust spectrum Single trusted operator per gateway; DM pairing and allowlists for inbound channels; opt-in sandboxing with configurable scope (per-agent, per-session, or shared) and multiple backends Per-action approval in one file (tools/approval.py); 3 modes (manual, smart, off) plus unconditional HARDLINE_PATTERNS floor; same approval rendered across CLI, gateway keyboards (Telegram, Discord, QQBot), ACP request_permission, and a cron-only unattended mode Agent runtime Iterative async generator (queryLoop()) as system center Embedded pi-coding-agent SDK runner inside gateway RPC dispatch; per-session queue serialization (with optional global lane) Synchronous while loop inside AIAgent.run_conversation (run_agent.py); iteration count default 90 plus an iteration budget, with a tool-stripped summary call on exhaustion; tool files self-register via registry.register(); parallel tool calls with sequential fallback Extension architecture 4 mechanisms at graduated context costs: MCP, plugins, skills, hooks Manifest-first plugin system with 12 capability types and central registry; separate skills layer; built-in MCP via openclaw mcp (server and outbound client registry) 5 surfaces: 3 at Claude-Code level (plugins/&lt;name&gt;/ with lifecycle hooks, bundled skills/, MCP servers in config.yaml) plus 2 backend-swap surfaces (plugins/memory/&lt;name&gt;/, plugins/model- providers/&lt;name&gt;/); hooks are Python callbacks or external shell commands Memory and context CLAUDE.md 4-level hierarchy; 5-layer compaction pipeline; LLM-based memory scan workspace bootstrap files (AGENTS.md, SOUL.md, TOOLS.md, IDENTITY.md, USER.md, plus conditionally BOOTSTRAP.md, HEARTBEAT.md, and MEMORY.md); separate memory system (MEMORY.md, daily notes, optional DREAMS.md); auto-compaction with pluggable providers; optional hybrid search (vector + keyword, conditional on embedding provider); experimental dreaming for long-term promotion One auxiliary-LLM summarizer</p><p class="dst">入口点（hermes/hermes-agent/hermes-acp）；树内加插件层消息传递表面；两个 SQLite 文件（state.db、kanban.db）用于持久性信任模型拒绝优先每个操作规则评估，带有钩子和可选的 ML 分类器； 7种权限模式；分级信任谱 每个网关单一可信运营商；入站通道的 DM 配对和许可名单；选择加入具有可配置范围（每个代理、每个会话或共享）和多个后端的沙箱 在一个文件中进行每个操作审批（tools/approval.py）； 3 种模式（手动、智能、关闭）加上无条件 HARDLINE_PATTERNS 底板；跨 CLI、网关键盘（Telegram、Discord、QQBot）、ACP request_permission 和仅 cron 无人值守模式代理运行时迭代异步生成器（queryLoop()）作为系统中心提供相同的批准在网关 RPC 调度内嵌入 pi-coding-agent SDK 运行程序；每会话队列序列化（带有可选的全局通道） AIAgent.run_conversation (run_agent.py) 内的同步 while 循环；迭代计数默认为 90 加上迭代预算，并在耗尽时使用工具剥离的摘要调用；工具文件通过registry.register()自行注册；具有顺序回退的并行工具调用 扩展架构 分级上下文成本的 4 种机制：MCP、插件、技能、挂钩 具有 12 种功能类型和中央注册表的清单优先插件系统；单独的技能层；通过 openclaw mcp（服务器和出站客户端注册表）内置 MCP 5 个表面：Claude 代码级别的 3 个（插件/&lt;名称&gt;/ 具有生命周期挂钩、捆绑技能/、config.yaml 中的 MCP 服务器）加上 2 个后端交换表面（插件/内存/&lt;名称&gt;/、插件/模型提供者/&lt;名称&gt;/）；钩子是Python回调或外部shell命令内存和上下文CLAUDE.md 4级层次结构； 5层压实管道；基于 LLM 的内存扫描工作区引导文件（AGENTS.md、SOUL.md、TOOLS.md、IDENTITY.md、USER.md，以及有条件的 BOOTSTRAP.md、HEARTBEAT.md 和 MEMORY.md）；独立的记忆系统（MEMORY.md、每日笔记、可选的DREAMS.md）；使用可插入提供程序进行自动压缩；可选的混合搜索（向量+关键字，以嵌入提供者为条件）；长期晋升的实验梦想一名辅助法学硕士总结者</p></div>
+
+<div class="bilingual-pair"><p class="src">with token-budget tail protection and a tool-output prune pass; summary prefixed with a “reference only” preamble; pre-injection scan against context files (AGENTS.md, .cursorrules, SOUL.md) for injection patterns and invisible Unicode; persistent MEMORY.md, USER.md remain authoritative across compaction Multi-agent and routing Task-delegating subagents (e.g., Explore, Plan, general-purpose); worktree isolation; final response text returned to parent Two separate concerns: (a) multi-agent routing with isolated agents, distinct workspaces, and binding-based channel dispatch; (b) sub-agent delegation with configurable nesting depth (max 5, default 1, recommended 2) and thread-bound sessions delegate_task spawns child AIAgent in a thread pool; concurrency cap 3 children default, depth cap 1 (clamped to [1,3]); leaf children cannot delegate by default; children run with persistent memory disabled; Kanban subsystem (SQLite-backed work queue) with stale-claim reclamation for multi-process worker coordination coding harnesses through its ACP (Agent Client Protocol) integration, and Hermes Agent sits on both sides of the ACP host/guest split, with its gateway hosting platform adapters and tool servers while its hermes-acp adapter lets external IDEs host Hermes, making the systems stackable rather than purely alternative.</p><p class="dst">具有代币预算尾部保护和工具输出修剪通道；摘要以“仅供参考”序言为前缀；针对上下文文件（AGENTS.md、.cursorrules、SOUL.md）进行预注入扫描，以获取注入模式和不可见的 Unicode；持久 MEMORY.md、USER.md 在压缩多代理和路由任务委派subagent（例如探索、计划、通用）方面保持权威；工作树隔离；返回给父级的最终响应文本 两个独立的问题：(a) 具有独立代理、不同工作区和基于绑定的通道调度的多代理路由； (b) 具有可配置嵌套深度（最大 5，默认 1，建议 2）的subagent委托和线程绑定会话 delegate_task 在线程池中生成子 AIAgent；默认子级并发上限为 3，深度上限为 1（限制为 [1,3]）；默认情况下，叶子孩子不能委托；孩子们跑步时持久记忆被禁用；看板子系统（SQLite 支持的工作队列）通过其 ACP（代理客户端协议）集成，为多进程工作协调编码harness提供过时声明回收，Hermes 代理位于 ACP 主机/来宾分割的两侧，其网关托管平台适配器和工具服务器，而其 hermes-acp 适配器允许外部 IDE 托管 Hermes，使系统可堆叠而不是纯粹的替代。</p></div>
+
+<div class="bilingual-pair"><p class="src">Trust model and security architecture.</p><p class="dst">信任模型和安全架构。</p></div>
+
+<div class="bilingual-pair"><p class="src">The three systems address different threat models. Claude Code</p><p class="dst">这三个系统针对不同的威胁模型。Claude·科德</p></div>
+
+<div class="bilingual-pair"><p class="src">assumes an untrusted model operating within a trusted developer’s machine: the deny-first permission 26 system (Section 5) evaluates every tool invocation, the ML classifier provides automated safety assessment, and seven permission modes create a graduated autonomy spectrum. OpenClaw assumes a single trusted operator per gateway instance. Its security architecture begins with identity and access control (DM pairing codes, sender allowlists, gateway authentication) rather than per-action safety classification. Tool policy uses configurable allow/deny lists per agent rather than a centralized classifier. Sandboxing is available as an opt-in feature with multiple backends (Docker, SSH, or OpenShell) and configurable scope (per-agent, per-session, or shared); a non-main mode can sandbox all non-main sessions when enabled, though sandboxing is not active by default. The OpenClaw security documentation explicitly states that hostile multi-tenant isolation on a shared gateway is not a supported security boundary. Hermes Agent takes a third position. Tool authorization is centralized in one file (tools/approval.py), exposing three modes (manual, smart, off) and an unconditional HARDLINE_PATTERNS floor that blocks rm -rf /, mkfs, raw dd to block devices, fork bombs, and system shutdown commands regardless of mode Tier B. The smart mode runs an auxiliary-LLM risk assessment; an in-source comment names OpenAI Codex’s smart approvals as the design inspiration.</p><p class="dst">假设在受信任的开发人员机器中运行不受信任的模型：拒绝优先权限 26 系统（第 5 节）评估每个工具调用，ML 分类器提供自动安全评估，七种权限模式创建分级自治范围。 OpenClaw 假定每个网关实例都有一个受信任的操作员。其安全架构始于身份和访问控制（DM 配对码、发件人白名单、网关身份验证），而不是按操作进行安全分类。工具策略使用每个代理的可配置允许/拒绝列表，而不是集中式分类器。沙箱作为一项可选功能提供，具有多个后端（Docker、SSH 或 OpenShell）和可配置范围（每个代理、每个会话或共享）；启用后，非主模式可以对所有非主会话进行沙箱处理，但默认情况下沙箱处理未处于活动状态。 OpenClaw 安全文档明确指出共享网关上的敌对多租户隔离不是受支持的安全边界。爱马仕代理占据第三位。工具授权集中在一个文件（tools/approval.py）中，公开三种模式（手动、智能、关闭）和无条件的 HARDLINE_PATTERNS 层，该层可阻止 rm -rf /、mkfs、原始 dd 来阻止设备、fork 炸弹和系统关闭命令，无论模式 B 层如何。智能模式运行辅助 LLM 风险评估；一条源内评论将 OpenAI Codex 的智能批准称为设计灵感。</p></div>
+
+<div class="bilingual-pair"><p class="src">Because Hermes runs across many surfaces, the same approval flow is rendered four times: a CLI prompt, gateway approval keyboards on Telegram, Discord, and QQBot, an ACP request_permission round-trip for IDE clients, and a cron-only mode for unattended runs. Compared with Claude Code’s seven-mode taxonomy and ML-classifier-driven auto mode, Hermes has a smaller mode taxonomy but the same multi-layer structure:</p><p class="dst">由于 Hermes 运行在多个界面上，因此相同的批准流程会呈现四次：CLI 提示、Telegram、Discord 和 QQBot 上的网关批准键盘、IDE 客户端的 ACP request_permission 往返以及用于无人值守运行的仅 cron 模式。与 Claude Code 的七模式分类法和 ML 分类器驱动的自动模式相比，Hermes 的模式分类法更小，但多层结构相同：</p></div>
+
+<div class="bilingual-pair"><p class="src">unconditional safety floor, default interactive prompt, opt-in auxiliary-LLM “smart” path. The architectural answer is the same; the surface count differs. The difference across the three reflects where the trust boundary sits: Claude Code places it between the model and the execution environment, OpenClaw places it at the gateway perimeter, and Hermes sits between the two with per-action approvals like Claude Code but rendered through many surfaces like OpenClaw.</p><p class="dst">无条件安全底线、默认交互提示、选择辅助LLM“智能”路径。架构上的答案是相同的；表面计数不同。三者之间的差异反映了信任边界所在的位置：Claude Code 将其放置在模型和执行环境之间，OpenClaw 将其放置在网关周边，而 Hermes 则位于两者之间，像 Claude Code 一样具有每个操作的批准，但通过 OpenClaw 等许多表面进行渲染。</p></div>
+
+<div class="bilingual-pair"><p class="src">Agent runtime and tool orchestration.</p><p class="dst">代理运行时和工具编排。</p></div>
+
+<div class="bilingual-pair"><p class="src">All three systems implement agentic loops, but the loops occupy</p><p class="dst">所有三个系统都实现代理循环，但循环占用</p></div>
+
+<div class="bilingual-pair"><p class="src">different positions in their respective architectures.</p><p class="dst">在各自的架构中处于不同的位置。</p></div>
+
+<div class="bilingual-pair"><p class="src">In Claude Code, the queryLoop() async generator</p><p class="dst">在 Claude Code 中，queryLoop() 异步生成器</p></div>
+
+<div class="bilingual-pair"><p class="src">(Section 4) is the system’s center: all interfaces feed into it, and it directly manages context assembly, model calls, tool dispatch, and recovery. In OpenClaw, the agent runtime is an embedded pi-coding-agent core (an external SDK from the pi-mono project that OpenClaw integrates), sitting inside a larger gateway dispatch layer. The gateway’s agent RPC validates parameters, resolves sessions, and returns immediately; the embedded runner then executes the agentic loop while emitting lifecycle and stream events back through the gateway protocol. Runs are serialized through per-session queues and an optional global lane, preventing tool and session races across the multi-channel surface. In Hermes Agent, the loop is a synchronous while inside AIAgent.run_conversation (run_agent.py), gated on an iteration count (default 90) and a separate iteration budget; when the budget is exhausted, a single tool-stripped summary call lets the agent deliver a closing message rather than terminate mid-thought Tier B; each iteration sends tool schemas collected by model_tools.get_tool_definitions() and routes any tool calls through model_tools.handle_function_- call, with tool files in tools/*.py self-registering at import time so that adding a tool requires only one registry.register() call, and a single assistant message returning multiple tool calls is executed in parallel with a sequential fallback. All three systems follow the ReAct pattern (Yao et al., 2022), with OpenClaw’s loop a component within a control plane rather than the control plane itself, and Hermes’s loop a peer to Claude Code’s at the runtime level but shape-different in implementation, a synchronous Python loop with thread-managed concurrency rather than an async generator that yields.</p><p class="dst">（第4节）是系统的中心：所有接口都输入其中，它直接管理上下文组装、模型调用、工具调度和恢复。在 OpenClaw 中，代理运行时是一个嵌入式 pi-coding-agent 核心（来自 OpenClaw 集成的 pi-mono 项目的外部 SDK），位于更大的网关调度层内。网关的代理RPC验证参数、解析会话并立即返回；然后，嵌入式运行器执行代理循环，同时通过网关协议发出生命周期和流事件。运行通过每个会话队列和可选的全局通道进行序列化，从而防止多通道表面上的工具和会话竞争。在 Hermes Agent 中，循环在 AIAgent.run_conversation (run_agent.py) 内是同步的，根据迭代计数（默认 90）和单独的迭代预算进行门控；当预算耗尽时，单个工具剥离的摘要调用可以让代理传递结束消息，而不是终止思考中的 B 层；每次迭代都会发送由 model_tools.get_tool_definitions() 收集的工具模式，并通过 model_tools.handle_function_- 调用路由任何工具调用，tools/*.py 中的工具文件会在导入时进行自注册，以便添加工具只需要一次registry.register() 调用，并且返回多个工具调用的单个辅助消息与顺序回退并行执行。所有三个系统都遵循 ReAct 模式（Yao 等人，2022），OpenClaw 的循环是控制平面内的组件，而不是控制平面本身，Hermes 的循环在运行时级别与 Claude Code 的循环相同，但在实现上有所不同，是具有线程管理并发性的同步 Python 循环，而不是产生的异步生成器。</p></div>
+
+<div class="bilingual-pair"><p class="src">Extension architecture.</p><p class="dst">扩展架构。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s four extension mechanisms (MCP, plugins, skills, hooks) are organized</p><p class="dst">Claude Code 的四种扩展机制（MCP、插件、技能、钩子）整理</p></div>
+
+<div class="bilingual-pair"><p class="src">by context cost (Section 6): hooks consume zero context, skills consume low context, and MCP servers consume high context once their tool schemas load.</p><p class="dst">按上下文成本（第 6 节）：钩子消耗零上下文，技能消耗低上下文，MCP 服务器在工具模式加载后消耗高上下文。</p></div>
+
+<div class="bilingual-pair"><p class="src">All four extend a single agent’s context window</p><p class="dst">所有四个扩展单个代理的上下文窗口</p></div>
+
+<div class="bilingual-pair"><p class="src">and tool surface. OpenClaw uses a manifest-first plugin system with four architectural layers (discovery, enablement, runtime loading, surface consumption) and twelve capability types including text inference, speech, media understanding, image/music/video generation, web search, and messaging channels. Plugins register capabilities into a central registry; the gateway reads the registry to expose tools, channels, provider setup, hooks, HTTP routes, CLI commands, and services. OpenClaw also has a separate skills layer with multiple sources (workspace, project-level, personal, managed, bundled, and extra directories, with workspace skills taking highest precedence) plus a public registry (ClawHub) and supports MCP through built-in openclaw mcp commands (server and outbound client registry). Hermes Agent exposes five extension surfaces against Claude 27 Code’s four Tier B: three sit at the same level as Claude Code’s (general plugins under plugins/&lt;name&gt;/ with lifecycle hooks, bundled skills under skills/, and MCP servers configured in config.yaml), while two extra surfaces extend a different axis (pluggable memory providers under plugins/memory/&lt;name&gt;/ and pluggable model providers under plugins/model-providers/&lt;name&gt;/) that let Hermes swap backends rather than intercept events. Hooks in Hermes can be in-process Python callbacks or config-driven external shell commands, both dispatched through the same hook manager. When Hermes spawns a stdio MCP server, the child’s environment is restricted to a small allowlist of system variables before launch, and npx/uvx package names are screened against the OSV malware database. The architectural difference across the three is where the extension acts: Claude Code’s extensions modify one agent’s action surface, OpenClaw’s plugins extend the gateway’s capability surface across all agents, and Hermes’s extensions add a second axis on top of a Claude-Code-style per-agent surface, swapping entire memory and model-provider backends in place rather than intercepting events around them.</p><p class="dst">和工具表面。 OpenClaw 使用清单优先的插件系统，具有四个架构层（发现、启用、运行时加载、表面消耗）和十二种功能类型，包括文本推理、语音、媒体理解、图像/音乐/视频生成、网络搜索和消息传递通道。插件将功能注册到中央注册表中；网关读取注册表以公开工具、通道、提供程序设置、挂钩、HTTP 路由、CLI 命令和服务。 OpenClaw 还有一个单独的技能层，具有多个来源（工作区、项目级、个人、托管、捆绑和额外目录，其中工作区技能具有最高优先级）以及公共注册表 (ClawHub)，并通过内置 openclaw mcp 命令（服务器和出站客户端注册表）支持 MCP。 Hermes Agent 针对 Claude 27 Code 的四个 B 层公开了五个扩展表面：其中三个与 Claude Code 处于同一级别（plugins/&lt;name&gt;/ 下的通用插件，带有生命周期挂钩，skills/ 下的捆绑技能，以及 config.yaml 中配置的 MCP 服务器），而两个额外的表面扩展了不同的轴（plugins/memory/&lt;name&gt;/ 下的可插拔内存提供程序和在plugins/model-providers/&lt;name&gt;/) 让 Hermes 交换后端而不是拦截事件。 Hermes 中的钩子可以是进程内的 Python 回调或配置驱动的外部 shell 命令，两者都通过相同的钩子管理器调度。当 Hermes 生成 std​​io MCP 服务器时，子进程的环境在启动前被限制在一小部分系统变量允许列表中，并且 npx/uvx 包名称会根据 OSV 恶意软件数据库进行筛选。三者之间的架构差异在于扩展的作用位置：Claude Code 的扩展修改一个代理的操作面，OpenClaw 的插件将网关的功能面扩展到所有代理，Hermes 的扩展在 Claude-Code 风格的每个代理表面上添加第二个轴，交换整个内存和模型提供程序后端，而不是拦截它们周围的事件。</p></div>
+
+<div class="bilingual-pair"><p class="src">Memory, context, and knowledge management.</p><p class="dst">记忆、情境和知识管理。</p></div>
+
+<div class="bilingual-pair"><p class="src">All three systems use transparent file-based memory rather</p><p class="dst">所有三个系统都使用透明的基于文件的内存，而不是</p></div>
+
+<div class="bilingual-pair"><p class="src">than opaque databases. Claude Code loads a four-level CLAUDE.md hierarchy and manages context pressure through a five-layer compaction pipeline (Section 7). Memory retrieval uses an LLM-based scan of file headers. OpenClaw injects workspace bootstrap files into the system prompt at session start: five core files (AGENTS.md, SOUL.md, TOOLS.md, IDENTITY.md, USER.md) plus conditionally BOOTSTRAP.md, HEARTBEAT.md, and MEMORY.md, with large files truncated. Separately, the memory system manages three file types: MEMORY.md for long-term durable facts, date-stamped daily notes (memory/YYYY-MM- DD.md), and an optional DREAMS.md for dreaming sweep summaries. When an embedding provider is configured, memory search uses hybrid retrieval combining vector similarity with keyword matching. An experimental dreaming system performs background consolidation, scoring candidates and promoting only qualified items from short-term recall into long-term memory. Before compaction, OpenClaw automatically reminds the agent to save important notes to memory files, preventing context loss. Compaction in Hermes is one auxiliary-LLM summarizer with token-budget tail protection, preceded by a tool-output prune pass; the summary is prefixed with a long “reference only” preamble that tells the agent the compaction is background context, not new instructions, and that persistent memory (MEMORY.md, USER.md) remains authoritative Tier B. Where Claude Code’s CLAUDE.md hierarchy is fixed and its compaction has five layers, Hermes has fewer compaction layers but adds a context-file pre-injection scan: files such as AGENTS.md, .cursorrules, and SOUL.md are checked against a list of injection patterns and invisible Unicode characters, and any hit replaces the file’s content with a [BLOCKED: ...] marker. All three share the design commitment to user-visible, editable memory but give different answers to the same context-management question: Claude Code invests in graduated context compression (five layers with cache awareness); OpenClaw invests in structured long-term memory promotion (dreaming, daily notes, memory search) plus pluggable compaction providers and session pruning, though its compaction pipeline is less graduated than Claude Code’s five-layer</p><p class="dst">比不透明的数据库。 Claude Code 加载四级 CLAUDE.md 层次结构，并通过五层压缩管道管理上下文压力（第 7 节）。内存检索使用基于 LLM 的文件头扫描。 OpenClaw 在会话启动时将工作区引导文件注入到系统提示符中：五个核心文件（AGENTS.md、SOUL.md、TOOLS.md、IDENTITY.md、USER.md）以及有条件的 BOOTSTRAP.md、HEARTBEAT.md 和 MEMORY.md，其中大文件被截断。内存系统单独管理三种文件类型：用于长期持久事实的 MEMORY.md、带日期标记的日常笔记 (内存/YYYY-MM-DD.md) 以及用于梦想扫描摘要的可选 DREAMS.md。配置嵌入提供程序后，内存搜索将使用向量相似性与关键字匹配相结合的混合检索。实验性的做梦系统会进行背景巩固，对候选者进行评分，并仅将合格的项目从短期回忆提升到长期记忆中。在压缩之前，OpenClaw 会自动提醒代理将重要注释保存到内存文件中，以防止上下文丢失。 Hermes 中的压缩是一种辅助 LLM 总结器，具有token预算尾部保护，之前是工具输出修剪过程；摘要以一个长的“仅供参考”前导码为前缀，告诉代理压缩是后台上下文，而不是新指令，并且持久内存（MEMORY.md、USER.md）仍然是权威的 Tier B。 Claude Code 的 CLAUDE.md 层次结构是固定的，其压缩有五层，Hermes 的压缩层较少，但添加了上下文文件预注入扫描：诸如 AGENTS.md 之类的文件， .cursorrules 和 SOUL.md 会根据注入模式和不可见 Unicode 字符列表进行检查，任何命中都会用 [BLOCKED: ...] 标记替换文件的内容。这三者都致力于用户可见、可编辑的内存，但对同一上下文管理问题给出了不同的答案：Claude Code 投资于分级上下文压缩（具有缓存感知功能的五层）； OpenClaw 投资于结构化长期记忆提升（做梦、每日笔记、记忆搜索）以及可插拔压缩提供程序和会话修剪，尽管其压缩管道的等级不如 Claude Code 的五层</p></div>
+
+<div class="bilingual-pair"><p class="src">system; Hermes invests in pre-injection content scanning and prompt-level isolation of persistent memory</p><p class="dst">系统； Hermes 投资于注入前内容扫描和持久内存的提示级隔离</p></div>
+
+<pre class="code-block">from compacted history rather than a deeper compaction stack.</pre>
+
+<div class="bilingual-pair"><p class="src">Multi-agent architecture and routing.</p><p class="dst">多代理架构和路由。</p></div>
+
+<div class="bilingual-pair"><p class="src">This dimension reveals the starkest architectural difference. Claude</p><p class="dst">这个维度揭示了最明显的架构差异。克洛德</p></div>
+
+<div class="bilingual-pair"><p class="src">Code’s multi-agent model is task delegation: the parent spawns subagents (Explore, Plan, general-purpose, and custom types) that operate in isolated context windows with restricted tool sets and return summary-only results (Section 8). Worktree isolation provides filesystem-level separation. OpenClaw separates two distinct concerns. First, multi-agent routing: a single gateway can host multiple fully isolated agents, each with its own workspace, authentication profiles, session store, and model configuration, routed to specific channels or senders via deterministic binding rules. Second, sub-agent delegation: within a single agent, background runs can be spawned with configurable nesting depth (maximum 5, default 1, recommended 2), thread-bound sessions on supported channels, and configurable tool policy by depth. OpenClaw’s project vision explicitly rejects agent-hierarchy frameworks as a default architecture. Hermes Agent splits the question along yet a different seam. Per-turn delegation goes through the delegate_task tool, which spawns child AIAgent instances in a thread pool; the parent blocks until children return summaries, concurrency is capped at three children by default and depth is capped at one (clamped to the range [1, 3]), leaf children cannot themselves delegate by default (nested delegation is opt-in through orchestrator children and a higher spawn-depth setting), and children always run with persistent memory disabled so they cannot read or write the parent’s 28 notes Tier B. Beyond per-turn delegation, v0.13’s Kanban subsystem is a SQLite-backed work queue where multiple Hermes worker profiles claim, heartbeat, and complete tasks, with stale-claim reclamation and an automatic block after two consecutive failed attempts (hermes_cli/kanban_db.py:2703). The distinction across the three matters because Claude Code’s subagents are subordinate workers within one user’s coding session, OpenClaw’s multi-agent routing creates genuinely independent agent instances serving different users or purposes through different channels, and Hermes combines a strict per-turn delegation default with a separate Kanban layer that lets multiple agent processes coordinate over a durable shared board, a question</p><p class="dst">代码的多代理模型是任务委托：父代理生成subagent（探索、计划、通用和自定义类型），这些subagent在具有受限工具集的隔离上下文窗口中运行，并返回仅摘要结果（第 8 节）。工作树隔离提供文件系统级分离。 OpenClaw 将两个不同的问题分开。首先，多代理路由：单个网关可以托管多个完全隔离的代理，每个代理都有自己的工作区、身份验证配置文件、会话存储和模型配置，通过确定性绑定规则路由到特定通道或发送者。其次，subagent委派：在单个代理内，可以使用可配置的嵌套深度（最大 5，默认 1，建议 2）、受支持通道上的线程绑定会话以及按深度配置的工具策略来生成后台运行。 OpenClaw 的项目愿景明确拒绝将代理层次结构框架作为默认架构。赫尔墨斯特工将这个问题分成了不同的方向。每轮委托通过 delegate_task 工具，该工具在线程池中生成子 AIAgent 实例；父级会阻塞，直到子级返回摘要，默认情况下，并发上限为 3 个子级，深度上限为 1（限制在范围 [1, 3]），默认情况下，叶级子级不能自行委派（嵌套委派通过协调器子级和更高的生成深度设置选择加入），并且子级始终在禁用持久内存的情况下运行，因此它们无法读取或写入父级的 28 个注释 B 层。除了每回合委派之外，v0.13 的看板子系统是一个SQLite 支持的工作队列，其中多个 Hermes 工作配置文件声明、心跳和完成任务，并在两次连续失败尝试后进行陈旧声明回收和自动阻止 (hermes_cli/kanban_db.py:2703)。这三个问题之间的区别是因为 Claude Code 的subagent是一个用户编码会话中的从属工作人员，OpenClaw 的多代理路由创建了真正独立的代理实例，通过不同的渠道为不同的用户或目的服务，而 Hermes 将严格的每轮委派默认值与单独的看板层相结合，让多个代理进程在持久的共享板上进行协调，这是一个问题</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code and OpenClaw do not ask in the same form.</p><p class="dst">Claude Code 和 OpenClaw 不以相同的形式提出要求。</p></div>
+
+<div class="bilingual-pair"><p class="src">10.2</p><p class="dst">10.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Hermes Agent: Capabilities Beyond the Comparison Table</p><p class="dst">爱马仕代理：超越对照表的能力</p></div>
+
+<div class="bilingual-pair"><p class="src">Session persistence in Hermes uses one WAL-mode SQLite database with full-text search across all session messages and a parent-session chain that records compaction-triggered splits Tier B. Where Claude Code persists sessions to JSONL files per project (Section 9), Hermes’s choice provides cross-session search and concurrent-reader support out of the box. When the gateway restarts mid-conversation, sessions auto-resume on next message arrival, driven by transcript-timestamp freshness logic with a one-hour default window. A built-in cron scheduler and webhook subscription system let the agent run unattended on schedule expressions or external HTTP events; cron sessions run with persistent memory disabled and a configurable inactivity timeout that defaults to 600 seconds. The distribution also includes a background “curator” loop that reviews agent-created skills, archives stale ones, and never deletes, gated to skills with agent provenance so bundled and hub-installed skills are off-limits. None of these capabilities map cleanly onto the six comparison dimensions used in the main table, which is why they appear here as a Hermes-specific addendum rather than as cells in Table 3. OpenClaw’s distinctive capabilities (the ClawHub plugin registry under extension architecture and the dreaming memory subsystem under memory and context) already occupy cells in those six dimensions and so do not require a parallel addendum. The Hermes additions in this subsection follow from its persistent-process scope, a deployment-context property Hermes shares with OpenClaw but that Claude Code’s per-session CLI model does not provide.</p><p class="dst">Hermes 中的会话持久性使用一个 WAL 模式 SQLite 数据库，对所有会话消息进行全文搜索，并使用一个记录压缩触发的拆分 B 层的父会话链。Claude Code 将会话持久保存到每个项目的 JSONL 文件（第 9 节），而 Hermes 的选择提供了开箱即用的跨会话搜索和并发读取器支持。当网关在对话中重新启动时，会话将在下一条消息到达时自动恢复，由转录时间戳新鲜度逻辑驱动，默认窗口为一小时。内置的 cron 调度程序和 webhook 订阅系统让代理可以在无人值守的情况下按计划表达式或外部 HTTP 事件运行； cron 会话在禁用持久内存和可配置的非活动超时（默认为 600 秒）的情况下运行。该发行版还包括一个后台“管理者”循环，用于审查代理创建的技能、存档过时的技能，并且从不删除，与代理出处的技能相关联，因此捆绑和集线器安装的技能是禁止的。这些功能都没有清晰地映射到主表中使用的六个比较维度，这就是为什么它们在这里显示为 Hermes 特定的附录，而不是表 3 中的单元格。OpenClaw 的独特功能（扩展架构下的 ClawHub 插件注册表以及内存和上下文下的梦想内存子系统）已经占据了这六个维度中的单元格，因此不需要并行附录。本小节中的 Hermes 添加内容源自其持久进程范围，这是 Hermes 与 OpenClaw 共享的部署上下文属性，但 Claude Code 的每会话 CLI 模型不提供该属性。</p></div>
+
+<div class="bilingual-pair"><p class="src">10.3</p><p class="dst">10.3</p></div>
+
+<div class="bilingual-pair"><p class="src">What the Contrast Reveals</p><p class="dst">对比揭示了什么</p></div>
+
+<div class="bilingual-pair"><p class="src">The comparison surfaces three observations about the design space of AI agent systems.</p><p class="dst">通过比较，我们得出了关于人工智能代理系统设计空间的三个观察结果。</p></div>
+
+<div class="bilingual-pair"><p class="src">First, the recurring design questions identified in Section 3.1 (where reasoning lives, what safety posture to adopt, how to manage context, how to structure extensibility) apply beyond coding agents. OpenClaw answers every one of these questions from the starting point of a multi-channel personal assistant rather than a repository-bound coding tool, and Hermes Agent answers them from a single-process, multi-surface deployment rather than a CLI harness or a multi-channel gateway. The questions are stable; the answers vary with deployment context across the three systems.</p><p class="dst">首先，第 3.1 节中确定的反复出现的设计问题（推理存在于何处、采用什么安全姿势、如何管理上下文、如何构建可扩展性）适用于coding agent之外。 OpenClaw 从多通道个人助理而不是存储库绑定的编码工具的起点回答了每一个问题，而 Hermes Agent 从单进程、多表面部署而不是 CLI harness或多通道网关回答了这些问题。问题稳定；答案因三个系统的部署环境而异。</p></div>
+
+<div class="bilingual-pair"><p class="src">Second, the systems make different bets along several dimensions. Claude Code invests in graduated per-action safety evaluation; OpenClaw invests in perimeter-level identity and access control; Hermes sits between the two, with per-action approvals like Claude Code rendered through many surfaces like OpenClaw. Claude Code treats the agent loop as the architectural center; OpenClaw treats the gateway control plane as the center and embeds the agent loop as one component; Hermes’s loop is a peer to Claude Code’s at the runtime level, occupying the same architectural position rather than sitting inside a gateway dispatch layer. Claude Code’s extensions modify a single context window; OpenClaw’s plugins extend a shared gateway surface; Hermes adds a second axis on top of a Claude-Code-style per-agent surface, swapping memory and model backends in place rather than intercepting events. These differences are not arbitrary: they follow from the three systems’ different trust models and deployment topologies.</p><p class="dst">其次，系统在几个维度上做出不同的赌注。 Claude Code 投资于分级的每次操作安全评估； OpenClaw 投资于外围级别的身​​份和访问控制； Hermes 位于两者之间，通过 OpenClaw 等许多表面呈现 Claude Code 等每次操作批准。 Claude Code 将代理循环视为架构中心； OpenClaw以网关控制平面为中心，将代理循环作为一个组件嵌入； Hermes 的循环在运行时级别与 Claude Code 的循环类似，占据相同的架构位置，而不是位于网关调度层内。 Claude Code 的扩展修改了单个上下文窗口； OpenClaw 的插件扩展了共享网关表面； Hermes 在 Claude-Code 风格的每个代理表面上添加了第二个轴，交换内存和模型后端，而不是拦截事件。这些差异并不是任意的：它们源于三个系统不同的信任模型和部署拓扑。</p></div>
+
+<div class="bilingual-pair"><p class="src">Third, the compositional relationships across the three systems are architecturally significant. OpenClaw can host Claude Code as an external coding harness via ACP, and Hermes Agent sits on both sides of the host/guest split: its gateway hosts platform adapters and tool servers, and its hermes-acp adapter lets external IDEs host Hermes. The systems are composable rather than exclusive alternatives, which suggests that the design space of AI agents is not a flat taxonomy but a layered one, where gateway-level systems and task-level harnesses can compose at multiple positions.</p><p class="dst">第三，三个系统之间的组合关系在架构上具有重要意义。 OpenClaw 可以通过 ACP 将 Claude Code 作为外部编码harness托管，而 Hermes Agent 位于主机/来宾分割的两侧：其网关托管平台适配器和工具服务器，其 hermes-acp 适配器允许外部 IDE 托管 Hermes。这些系统是可组合的，而不是排他性的替代方案，这表明人工智能代理的设计空间不是平面分类法，而是分层的，其中网关级系统和任务级harness可以在多个位置组合。</p></div>
+
+<div class="bilingual-pair"><p class="src">29</p><p class="dst">29</p></div>
+
+<div class="bilingual-pair"><p class="src">Table 4 AI coding tool categories by degree of autonomous action.</p><p class="dst">表 4 按自主行动程度划分的人工智能编码工具类别。</p></div>
+
+<div class="bilingual-pair"><p class="src">Category</p><p class="dst">类别</p></div>
+
+<div class="bilingual-pair"><p class="src">Examples</p><p class="dst">示例</p></div>
+
+<div class="bilingual-pair"><p class="src">Pattern</p><p class="dst">图案</p></div>
+
+<div class="bilingual-pair"><p class="src">Inline completion</p><p class="dst">内联完成</p></div>
+
+<div class="bilingual-pair"><p class="src">Copilot, Tabnine</p><p class="dst">副驾驶，塔布宁</p></div>
+
+<div class="bilingual-pair"><p class="src">Editor plugin</p><p class="dst">编辑器插件</p></div>
+
+<div class="bilingual-pair"><p class="src">Chat-integrated</p><p class="dst">聊天集成</p></div>
+
+<div class="bilingual-pair"><p class="src">Cursor, Windsurf, Cody</p><p class="dst">光标，风帆冲浪，科迪</p></div>
+
+<div class="bilingual-pair"><p class="src">IDE-coupled product</p><p class="dst">IDE 耦合产品</p></div>
+
+<div class="bilingual-pair"><p class="src">Agentic CLI</p><p class="dst">代理CLI</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code, Codex CLI, Aider</p><p class="dst">Claude代码、Codex CLI、Aider</p></div>
+
+<div class="bilingual-pair"><p class="src">Tool-use loop</p><p class="dst">工具使用循环</p></div>
+
+<div class="bilingual-pair"><p class="src">Fully autonomous</p><p class="dst">完全自主</p></div>
+
+<div class="bilingual-pair"><p class="src">Devin, SWE-Agent, OpenHands</p><p class="dst">Devin，SWE-Agent，OpenHands</p></div>
+
+<div class="bilingual-pair"><p class="src">Sandbox + planning</p><p class="dst">沙盒+规划</p></div>
+
+<div class="bilingual-pair"><p class="src">11</p><p class="dst">11</p></div>
+
+<div class="bilingual-pair"><p class="src">Related Work</p><p class="dst">相关工作</p></div>
+
+<div class="bilingual-pair"><p class="src">11.1</p><p class="dst">11.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Coding Agent Taxonomy</p><p class="dst">coding agent分类</p></div>
+
+<div class="bilingual-pair"><p class="src">AI coding tools can be organized by the degree of autonomous action they support (Table 4). Inline completion tools such as GitHub Copilot (Chen et al., 2021) suggest code fragments within the editor without autonomous action. Chat-integrated products including Cursor and Windsurf add conversational interaction and multi-file edits but remain coupled to the IDE environment. Agentic CLI tools, including Claude Code, OpenAI’s Codex CLI, and Aider (Gauthier, 2024), operate from the command line and can autonomously execute shell commands, read and write files, and iterate on outputs within a single request. Fully autonomous systems like Devin, SWE-Agent (Yang et al., 2024), and OpenHands (Wang et al., 2024b) aim for minimal human supervision, often in sandboxed cloud environments.</p><p class="dst">AI 编码工具可以根据它们支持的自主操作程度进行组织（表 4）。 GitHub Copilot（Chen 等人，2021）等内联补全工具建议编辑器内的代码片段，无需自主操作。包括 Cursor 和 Windsurf 在内的聊天集成产品添加了对话交互和多文件编辑，但仍与 IDE 环境耦合。 Agentic CLI 工具，包括 Claude Code、OpenAI 的 Codex CLI 和 Aider（Gauthier，2024），从命令行运行，可以自主执行 shell 命令、读写文件以及在单个请求中迭代输出。 Devin、SWE-Agent（Yang 等人，2024）和 OpenHands（Wang 等人，2024b）等完全自主的系统旨在实现最少的人工监督，通常在沙盒云环境中。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code shares features with higher-autonomy agents (auto-mode classifier, background agent execution, remote environments) but retains interactive approval by default. Evaluation benchmarks such as SWE-Bench (Jimenez et al., 2023) and HumanEval (Chen et al., 2021) have driven much of the academic focus on coding agents. This paper examines Claude Code’s internal architecture from source code.</p><p class="dst">Claude Code 与更高自主权的代理共享功能（自动模式分类器、后台代理执行、远程环境），但默认保留交互式批准。 SWE-Bench（Jimenez 等人，2023）和 HumanEval（Chen 等人，2021）等评估基准推动了学术界对coding agent的关注。本文从源代码角度考察了 Claude Code 的内部架构。</p></div>
+
+<div class="bilingual-pair"><p class="src">11.2</p><p class="dst">11.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Agent Architecture Patterns</p><p class="dst">代理架构模式</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s core loop follows the ReAct pattern (Yao et al., 2022): the model generates reasoning and tool invocations, the harness executes actions, and results feed the next iteration. Toolformer (Schick et al., 2023) demonstrated that language models can learn to use tools. Claude Code uses up to 54 built-in tools and a layered permission system. The broader design space has been mapped by several surveys. Weng (2023) offered the now-standard decomposition into planning, memory, and tool use, and Wang et al. (2024a) catalogued early autonomous-agent work. Xu (2026) frames the field around three recurring trade-offs (autonomy vs.</p><p class="dst">Claude Code 的核心循环遵循 ReAct 模式（Yao 等人，2022）：模型生成推理和工具调用，harness执行操作，并将结果提供给下一次迭代。 Toolformer（Schick 等人，2023）证明了语言模型可以学习使用工具。 Claude Code 使用多达 54 个内置工具和分层权限系统。多项调查已经绘制了更广泛的设计空间。 Weng（2023）提供了对规划、记忆和工具使用的现在标准分解，Wang 等人。 (2024a) 对早期的自主代理工作进行了分类。 Xu（2026）围绕三个反复出现的权衡（自治与自治）构建了该领域。</p></div>
+
+<div class="bilingual-pair"><p class="src">controllability, latency vs. accuracy, capability vs. reliability) that recur throughout our analysis, and Hu et al.</p><p class="dst">可控性、延迟与准确性、能力与可靠性）在我们的分析中反复出现，Hu 等人。</p></div>
+
+<div class="bilingual-pair"><p class="src">(2024) casts agent design itself as a search problem over components, algorithms, and evaluation functions.</p><p class="dst">（2024）将代理设计本身视为组件、算法和评估函数的搜索问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">This paper characterizes one specific point in that space.</p><p class="dst">本文描述了该领域的一个具体点。</p></div>
+
+<div class="bilingual-pair"><p class="src">A recent survey on code as agent harness frames code not only as model output but as the substrate for reasoning, action, environment modeling, and execution-based verification (Ning et al., 2026). That framing matches this paper’s focus on the harness around the model rather than on benchmark scores alone.</p><p class="dst">最近一项关于代码作为代理harness的调查将代码不仅作为模型输出，而且作为推理、动作、环境建模和基于执行的验证的基础（Ning 等人，2026）。该框架与本文对模型harness的关注相匹配，而不仅仅是基准分数。</p></div>
+
+<div class="bilingual-pair"><p class="src">Recent runtime mechanisms.</p><p class="dst">最近的运行时机制。</p></div>
+
+<div class="bilingual-pair"><p class="src">Recent surveys and systems make several harness choices explicit. Graph</p><p class="dst">最近的调查和系统明确了一些harness的选择。图</p></div>
+
+<div class="bilingual-pair"><p class="src">Engineering separates task dependencies, agent communication, and execution state (Feng et al., 2026), and the Self-Evolving Coding Agents survey organizes persistent changes by their target, timing, and feedback source (Zhou et al., 2026). LoopsBench and LoopArena evaluate how prerequisites, retained regression checks, and a controller’s decisions to check or stop shape a coding loop (Li et al., 2026; Wang et al., 2026a), and Symphony separates issue scheduling from the coding agent’s own loop (OpenAI, 2026b). For recovery, Resume Means Resume tests the checkpoint and resume behavior of workflow frameworks against their stated semantics (Khan, 2026), and Temporal’s Deep Agents integration runs each model call and I/O tool call as a Temporal activity while the control loop replays inside the workflow (Temporal Technologies, 2026).</p><p class="dst">工程将任务依赖性、代理通信和执行状态分开（Feng 等人，2026），而自进化coding agent调查则根据目标、时间和反馈源组织持续变化（Zhou 等人，2026）。 LoopsBench 和 LoopArena 评估先决条件、保留的回归检查以及控制器检查或停止形成编码循环的决定（Li 等人，2026；Wang 等人，2026a），而 Symphony 将问题调度与coding agent自己的循环分开（OpenAI，2026b）。对于恢复，Resume Means Resume 根据工作流框架声明的语义测试检查点和恢复行为（Khan，2026），Temporal 的深度agent 集成将每个模型调用和 I/O 工具调用作为 Temporal 活动运行，同时控制循环在工作流内重放（Temporal Technologies，2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Living-Harness updates an episodic memory and a state graph between episodes while the model and tools stay fixed (Du et al., 2026). Graphiti and Cognee store entity relations in knowledge graphs (Zep, 2026; Cognee, 2026). APPA checks a tool’s result before admitting it to the agent’s context, separating permission to call a tool from admission of the data it returns (Kravchenko et al., 2026). At the protocol level, the 2026-07-28 30 Table 5 Design space of context management approaches in LLM-based tools.</p><p class="dst">Living-Harness 更新情景记忆和情景之间的状态图，同时模型和工具保持固定（Du et al., 2026）。 Graphiti 和 Cognee 在知识图中存储实体关系（Zep，2026；Cognee，2026）。 APPA 在将工具的结果接纳到代理上下文之前检查其结果，将调用工具的权限与其返回的数据的接纳分开（Kravchenko 等人，2026）。在协议层面，2026-07-28 30 表 5 基于 LLM 的工具中上下文管理方法的设计空间。</p></div>
+
+<div class="bilingual-pair"><p class="src">Approach</p><p class="dst">方法</p></div>
+
+<div class="bilingual-pair"><p class="src">Mechanism</p><p class="dst">机制</p></div>
+
+<div class="bilingual-pair"><p class="src">Granularity</p><p class="dst">粒度</p></div>
+
+<div class="bilingual-pair"><p class="src">Simple truncation</p><p class="dst">简单截断</p></div>
+
+<div class="bilingual-pair"><p class="src">Drop oldest messages</p><p class="dst">删除最旧的消息</p></div>
+
+<div class="bilingual-pair"><p class="src">Coarse</p><p class="dst">粗略</p></div>
+
+<div class="bilingual-pair"><p class="src">Sliding window</p><p class="dst">推拉窗</p></div>
+
+<div class="bilingual-pair"><p class="src">Fixed-size recent history</p><p class="dst">固定大小的最近历史记录</p></div>
+
+<div class="bilingual-pair"><p class="src">Medium</p><p class="dst">中等</p></div>
+
+<div class="bilingual-pair"><p class="src">RAG</p><p class="dst">RAG</p></div>
+
+<div class="bilingual-pair"><p class="src">Retrieve relevant snippets</p><p class="dst">检索相关片段</p></div>
+
+<div class="bilingual-pair"><p class="src">Fine</p><p class="dst">很好</p></div>
+
+<div class="bilingual-pair"><p class="src">Single summarization</p><p class="dst">单一总结</p></div>
+
+<div class="bilingual-pair"><p class="src">One-pass compress</p><p class="dst">一次压缩</p></div>
+
+<div class="bilingual-pair"><p class="src">Coarse</p><p class="dst">粗略</p></div>
+
+<div class="bilingual-pair"><p class="src">Graduated compaction</p><p class="dst">分级压实</p></div>
+
+<div class="bilingual-pair"><p class="src">Multi-layer pipeline</p><p class="dst">多层管道</p></div>
+
+<div class="bilingual-pair"><p class="src">Very fine</p><p class="dst">非常好</p></div>
+
+<div class="bilingual-pair"><p class="src">MCP revision removes protocol-level sessions and lets one tool operation span several requests (Model Context Protocol, 2026b,a), the Agent Host Protocol lets several clients share a host-owned session (Lourens et al., 2026), and A2A connects independent agent systems (A2A Project, 2026). Cursor reports coordinating agent swarms through shared design documents (Lin, 2026).</p><p class="dst">MCP 修订版删除了协议级会话，并允许一个工具操作跨越多个请求（模型上下文协议，2026b，a），代理主机协议允许多个客户端共享主机拥有的会话（Lourens 等人，2026），A2A 连接独立代理系统（A2A 项目，2026）。 Cursor 通过共享设计文档报告协调代理群（Lin，2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Multi-agent orchestration frameworks such as AutoGen (Wu et al., 2024), LangChain (LangChain, 2026b), and CrewAI (CrewAI, 2026) provide conversation-based agent coordination. Claude Code’s subagent delegation (Section 8) includes permission override precedence, two-level permission scoping, and separate transcript files for each subagent. LATS (Zhou et al., 2023) unifies reasoning, acting, and planning in a tree-search framework. Claude Code’s plan permission mode implements a simpler plan-then-execute approach.</p><p class="dst">AutoGen (Wu et al., 2024)、LangChain (LangChain, 2026b) 和 CrewAI (CrewAI, 2026) 等多代理编排框架提供基于会话的代理协调。 Claude Code 的subagent委托（第 8 节）包括权限覆盖优先级、两级权限范围以及每个subagent的单独脚本文件。 LATS（Zhou et al., 2023）将推理、行动和规划统一在树搜索框架中。 Claude Code 的计划许可模式实现了一种更简单的计划然后执行的方法。</p></div>
+
+<div class="bilingual-pair"><p class="src">Practitioner writing has converged on a handful of recurring patterns that Claude Code’s architecture instantiates. Anthropic’s own “Building Effective Agents” (Schluntz and Zhang, 2024) distinguishes agents</p><p class="dst">从业者的写作集中在 Claude Code 架构实例化的一些重复出现的模式上。 Anthropic 自己的“构建有效代理”（Schluntz 和Zhang，2024）区分了代理</p></div>
+
+<pre class="code-block">from workflows and argues for simple composable patterns over heavy frameworks. Martin (2026) synthesizes</pre>
+
+<div class="bilingual-pair"><p class="src">seven patterns observed in production systems, including giving agents filesystem and shell access as a general-purpose action layer, and discovering actions on demand rather than loading every tool schema upfront.</p><p class="dst">在生产系统中观察到的七种模式，包括为代理提供文件系统和 shell 访问作为通用操作层，以及按需发现操作而不是预先加载每个工具模式。</p></div>
+
+<div class="bilingual-pair"><p class="src">Chase (2025) observes that Claude Code’s planning tool is “basically a no-op” whose value lies in keeping the agent on track rather than in performing any external computation. Wang (2025) argues that authority is the element academic frameworks most often leave out, calling trust “the most overlooked element” in production agent design, a gap the permission analysis in Section 5 attempts to close. Huyen (2025) makes the compound-error concern concrete: at 95% per-step accuracy, a 100-step task succeeds only 0.6% of the time, which motivates the per-step verification patterns we trace in Section 4 and Section 5. OpenAI makes a similar point in its own writing on harness engineering, treating the design of the harness itself as a central engineering task (OpenAI, 2026a). Recently, a new concept called loop engineering has also emerged: instead of prompting the agent each turn, the developer builds a loop that finds work, assigns it, checks the result, and decides what comes next, assembled from the same primitives this paper documents, such as skills, MCP servers, and subagents (Osmani, 2026). It lets a single developer direct far more work autonomously and has drawn interest, including from Claude Code’s own team, though reducing the person’s turn-by-turn involvement also sharpens the long-term developer-capability concern that Section 14 returns to.</p><p class="dst">Chase（2025）观察到 Claude Code 的规划工具“基本上是一个无操作”，其价值在于使代理保持在正轨上，而不是执行任何外部计算。 Wang (2025) 认为，权威是学术框架最常忽略的要素，称信任是生产代理设计中“最被忽视的要素”，第 5 节中的权限分析试图弥补这一差距。 Huyen (2025) 将复合错误问题具体化：在每步精度为 95% 的情况下，100 步任务的成功率仅为 0.6%，这激发了我们在第 4 节和第 5 节中跟踪的每步验证模式。OpenAI 在其自己的harness工程著作中提出了类似的观点，将harness本身的设计视为中心工程任务（OpenAI，2026a）。最近，还出现了一种称为循环工程的新概念：开发人员不是每次都提示代理，而是构建一个循环来查找工作、分配工作、检查结果并决定下一步，该循环由本文记录的相同原语组装而成，例如技能、MCP 服务器和subagent（Osmani，2026）。它让单个开发人员可以自主指导更多的工作，并引起了人们的兴趣，包括 Claude Code 自己的团队，尽管减少个人的逐一参与也加剧了第 14 节所提到的对开发人员能力的长期担忧。</p></div>
+
+<div class="bilingual-pair"><p class="src">Context management.</p><p class="dst">上下文管理。</p></div>
+
+<div class="bilingual-pair"><p class="src">Table 5 presents a design-space taxonomy of context management approaches. Claude</p><p class="dst">表 5 展示了上下文管理方法的设计空间分类。克洛德</p></div>
+
+<div class="bilingual-pair"><p class="src">Code’s five-layer compaction pipeline applies multiple strategies at different granularities before escalating, with cache-aware compression and virtual-view-on-read semantics. Zhang et al. (2025a) characterizes two failure modes that this design mitigates (summarization that drops domain details, and detail loss from iterative context rewriting), and instead proposes treating context as an “evolving playbook” that accumulates strategies over time. Claude Code’s approach is consistent with that framing, since the CLAUDE.md hierarchy accumulates structured instructions rather than repeatedly summarizing them. Hu et al. (2025) distinguishes context engineering from agent memory: context engineering handles transient assembly, while memory covers persistent factual knowledge and experiential traces. Claude Code’s architecture separates the two in the same way, pairing a compaction pipeline with a file-based memory hierarchy.</p><p class="dst">代码的五层压缩管道在升级之前以不同粒度应用多种策略，并具有缓存感知压缩和读取时虚拟视图语义。张等人。 (2025a) 描述了这种设计可以缓解的两种故障模式（丢弃领域细节的摘要以及迭代上下文重写导致的细节丢失），并建议将上下文视为随着时间的推移积累策略的“不断发展的剧本”。 Claude Code 的方法与该框架一致，因为 CLAUDE.md 层次结构累积结构化指令而不是重复总结它们。胡等人。 （2025）将情境工程与代理记忆区分开来：情境工程处理瞬态组装，而记忆则涵盖持久的事实知识和经验痕迹。 Claude Code 的架构以相同的方式将两者分开，将压缩管道与基于文件的内存层次结构配对。</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety and permissions.</p><p class="dst">安全和权限。</p></div>
+
+<div class="bilingual-pair"><p class="src">Production coding agents adopt safety architectures that vary along three axes:</p><p class="dst">生产coding agent采用沿三个轴变化的安全架构：</p></div>
+
+<div class="bilingual-pair"><p class="src">approval model (per-action prompting, classifier-mediated automation, or no prompting with post-hoc review), isolation boundary (OS-level container, filesystem sandbox, permission-scoped tool pool, or none), and recovery mechanism (version-control rollback, session-scoped permission reset, or checkpoint-based rewind). SWE- Agent and OpenHands (Yang et al., 2024; Wang et al., 2024b) rely primarily on Docker container isolation, 31 providing environment-level sandboxing that constrains all agent actions. Codex CLI supports sandbox modes and approval policies for shell commands. OpenCode and Cline also provide tool approval controls (Anomaly, 2026; Cline, 2026). Aider (Gauthier, 2024) uses Git as its primary safety mechanism, making all changes reversible through version control. Claude Code combines per-action deny-first rules, an ML-based classifier for automated approval, optional shell sandboxing, and session-scoped permission non-restoration, layering multiple mechanisms rather than relying on a single isolation boundary.</p><p class="dst">批准模型（每个操作提示、分类器介导的自动化或事后审查无提示）、隔离边界（操作系统级容器、文件系统沙箱、权限范围工具池或无）和恢复机制（版本控制回滚、会话范围权限重置或基于检查点的倒带）。 SWE-Agent 和 OpenHands（Yang 等人，2024；Wang 等人，2024b）主要依赖于 Docker 容器隔离，31 提供限制所有代理操作的环境级沙箱。 Codex CLI 支持 shell 命令的沙箱模式和批准策略。 OpenCode 和 Cline 还提供工具审批控制（Anomaly，2026；Cline，2026）。 Aider (Gauthier, 2024) 使用 Git 作为其主要安全机制，通过版本控制使所有更改都可逆。 Claude Code 结合了按操作拒绝优先规则、用于自动批准的基于 ML 的分类器、可选的 shell 沙箱和会话范围的权限非恢复，分层多种机制而不是依赖于单个隔离边界。</p></div>
+
+<div class="bilingual-pair"><p class="src">Sandboxing reports make this boundary concrete. E2B and OpenSandbox expose isolated execution environ- ments through APIs (E2B, 2026; OpenSandbox, 2026). OpenAI’s Windows sandbox discussion describes write access scoped to the working directory and configured writable roots, with explicit deny rules for selected read-only paths inside those roots (OpenAI, 2026c). Cursor’s cloud-agent report adds the cloud side of the same problem: network policy, secret redaction, and credential management become part of the agent environment (Ma, 2026). These details make the safety boundary an execution boundary, not only an approval prompt.</p><p class="dst">沙箱报告使这一边界变得具体。 E2B 和 OpenSandbox 通过 API 公开隔离的执行环境（E2B，2026；OpenSandbox，2026）。 OpenAI 的 Windows 沙箱讨论描述了仅限于工作目录和配置的可写根的写入访问，并为这些根内选定的只读路径提供了明确的拒绝规则（OpenAI，2026c）。 Cursor 的云代理报告添加了同一问题的云端：网络策略、秘密编辑和凭证管理成为代理环境的一部分（Ma，2026）。这些细节使安全边界成为执行边界，而不仅仅是审批提示。</p></div>
+
+<div class="bilingual-pair"><p class="src">Protocols and extensibility.</p><p class="dst">协议和可扩展性。</p></div>
+
+<div class="bilingual-pair"><p class="src">The Model Context Protocol that Claude Code uses as its primary external tool</p><p class="dst">Claude Code 用作其主要外部工具的模型上下文协议</p></div>
+
+<div class="bilingual-pair"><p class="src">integration has become a de facto standard with a substantial ecosystem and a corresponding attack surface.</p><p class="dst">集成已成为事实上的标准，具有庞大的生态系统和相应的攻击面。</p></div>
+
+<div class="bilingual-pair"><p class="src">Hou et al. (2025) catalogues thousands of community-developed MCP servers across 26 major directories and organizes MCP-specific threats into four attacker categories and sixteen scenarios, including tool poisoning, rug pulls, and cross-server shadowing. The permission and deny-rule machinery analyzed in Section 5 and the pre-filtering step in Section 6.2 can be read as the runtime side of the mitigations that survey calls for.</p><p class="dst">侯等人。 (2025) 对 26 个主要目录中的数千个社区开发的 MCP 服务器进行了编目，并将 MCP 特定威胁分为四个攻击者类别和 16 个场景，包括工具中毒、拉扯和跨服务器阴影。第 5 节中分析的许可和拒绝规则机制以及第 6.2 节中的预过滤步骤可以理解为调查要求的缓解措施的运行时方面。</p></div>
+
+<div class="bilingual-pair"><p class="src">The same point applies to higher-level tool design.</p><p class="dst">同样的一点也适用于更高级别的工具设计。</p></div>
+
+<div class="bilingual-pair"><p class="src">NSA guidance treats MCP security as a lifecycle</p><p class="dst">NSA 指南将 MCP 安全视为生命周期</p></div>
+
+<div class="bilingual-pair"><p class="src">issue that spans protocol design, runtime scheduling, integration with external services, and long-term monitoring (National Security Agency, 2026). A proposal for agent-first tool design argues that agent-facing APIs should offer search, resolve, preview, execute, verify, and recover phases, not just human-oriented CRUD endpoints (Pan, 2026). Read this way, MCP servers, plugins, skills, SDKs, and agent-to-agent protocols form a tool supply chain: they expand what an agent can do, but they also need identity, allowlists, versioning, audit logs, and revocation.</p><p class="dst">问题涵盖协议设计、运行时调度、与外部服务的集成以及长期监控（国家安全局，2026）。代理优先工具设计提案认为，面向代理的 API 应该提供搜索、解析、预览、执行、验证和恢复阶段，而不仅仅是面向人类的 CRUD 端点（Pan，2026）。这样理解，MCP 服务器、插件、技能、SDK 和代理到代理协议形成了一个工具供应链：它们扩展了代理的功能，但它们也需要身份、允许列表、版本控制、审核日志和撤销。</p></div>
+
+<div class="bilingual-pair"><p class="src">Software architecture.</p><p class="dst">软件架构。</p></div>
+
+<div class="bilingual-pair"><p class="src">Layered architecture patterns (Garlan et al., 1993) inform our five-layer decomposition.</p><p class="dst">分层架构模式（Garlan 等人，1993）告诉我们五层分解。</p></div>
+
+<div class="bilingual-pair"><p class="src">Role-based access control models (Sandhu et al., 2002) provide theory for the permission mode system.</p><p class="dst">基于角色的访问控制模型（Sandhu et al., 2002）为权限模式系统提供了理论。</p></div>
+
+<div class="bilingual-pair"><p class="src">Browser sandboxing (Reis and Gribble, 2009) is a similar per-process isolation approach. Multi-agent system theory (Wooldridge, 2009) helps explain subagent delegation.</p><p class="dst">浏览器沙箱（Reis 和 Gribble，2009）是一种类似的每进程隔离方法。多代理系统理论（Wooldridge，2009）有助于解释subagent委托。</p></div>
+
+<div class="bilingual-pair"><p class="src">Positioning.</p><p class="dst">定位。</p></div>
+
+<div class="bilingual-pair"><p class="src">Prior work on coding agents has focused on benchmarks (how well agents solve tasks), frameworks (how to compose agents), and products (what users can do). This paper contributes a source-grounded design- space analysis of a production coding agent, using source-level analysis and architectural comparison to surface design choices and trade-offs. It draws on the software architecture case study tradition (Garlan et al., 1993) but applies it to an LLM-based agent by systematically identifying design questions, mapping alternatives, and contrasting Claude Code’s choices with those of OpenClaw and Hermes Agent, two independent AI agent systems operating from different deployment contexts.</p><p class="dst">先前有关coding agent的工作主要集中在基准（代理解决任务的能力）、框架（如何组成代理）和产品（用户可以做什么）。本文利用源代码级分析和架构比较来对生产coding agent进行基于源代码的设计空间分析，以进行表面设计选择和权衡。它借鉴了软件架构案例研究传统（Garlan 等人，1993），但通过系统地识别设计问题、映射替代方案，并将 Claude Code 的选择与 OpenClaw 和 Hermes Agent（两个在不同部署环境中运行的独立 AI agent系统）的选择进行对比，将其应用于基于 LLM 的代理。</p></div>
+
+<div class="bilingual-pair"><p class="src">12</p><p class="dst">12</p></div>
+
+<div class="bilingual-pair"><p class="src">Discussion</p><p class="dst">讨论</p></div>
+
+<div class="bilingual-pair"><p class="src">The analysis in the preceding sections documented how Claude Code answers recurring design questions about loop architecture, safety posture, extensibility, context management, delegation, and persistence. Each answer reflects a position in a design space with real alternatives and measurable trade-offs. This section examines what those answers reveal when read together: the design philosophy they reflect (Section 12.1), the value tensions they create (Section 12.2), the architectural trade-offs they entail (Section 12.3), the empirical predictions they generate (Section 12.4), and the cross-cutting commitments that recur across subsystems (Section 12.7). The five-value framework from Section 2.1 organizes the section.</p><p class="dst">前面几节中的分析记录了 Claude Code 如何回答有关循环架构、安全态势、可扩展性、上下文管理、委派和持久性的反复出现的设计问题。每个答案都反映了设计空间中的立场，具有真正的替代方案和可衡量的权衡。本节将探讨这些答案在一起阅读时揭示的内容：它们反映的设计理念（第 12.1 节）、它们创造的价值张力（第 12.2 节）、它们带来的架构权衡（第 12.3 节）、它们生成的经验预测（第 12.4 节）以及跨子系统重复出现的跨领域承诺（第 12.7 节）。 2.1 节中的五值框架组织了本节。</p></div>
+
+<div class="bilingual-pair"><p class="src">32</p><p class="dst">32</p></div>
+
+<div class="bilingual-pair"><p class="src">12.1</p><p class="dst">12.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Design Philosophy</p><p class="dst">设计理念</p></div>
+
+<div class="bilingual-pair"><p class="src">The values and design principles introduced in Section 2 predict an architecture that invests in operational infrastructure rather than decision scaffolding. The implementation confirms this: the architecture documented in Sections 3 to 9 is overwhelmingly deterministic infrastructure (permission gates, tool routing, context management, recovery logic), with the LLM invoked as a stateless completion endpoint. An estimated 1.6% of the codebase constitutes decision logic, the remaining 98.4% is the operational harness. This ratio is not accidental.</p><p class="dst">第 2 节中介绍的价值观和设计原则预测了一种投资于运营基础设施而不是决策脚手架的架构。实现证实了这一点：第 3 节到第 9 节中记录的架构是压倒性的确定性基础设施（权限门、工具路由、上下文管理、恢复逻辑），并且 LLM 作为无状态完成端点调用。估计代码库的 1.6% 构成决策逻辑，其余 98.4% 是操作harness。这个比例并非偶然。</p></div>
+
+<div class="bilingual-pair"><p class="src">The design principles documented in Section 2.2 underpin this approach: the harness creates conditions under which the model can decide well, rather than constraining its choices.</p><p class="dst">第 2.2 节中记录的设计原则支撑了这种方法：harness创造了模型可以做出良好决策的条件，而不是限制其选择。</p></div>
+
+<div class="bilingual-pair"><p class="src">This design runs counter to the dominant pattern in agent engineering, where frameworks such as LangGraph route model outputs through explicit graph nodes with typed edges, and systems like Devin pair multi-step planners with heavy operational infrastructure. Claude Code instead gives the model maximum decision latitude within a rich operational harness. The engineering complexity exists not to constrain the model’s decisions but to enable them. This layered architecture, where the model reasons and the harness enforces, raises the question of whether agentic coding tools are converging toward operating-system-like abstractions in which the core loop serves as the kernel and everything else constitutes the OS.</p><p class="dst">这种设计与代理工程中的主导模式背道而驰，其中 LangGraph 等框架通过具有类型化边缘的显式图形节点路由模型输出，而像 Devin 这样的系统将多步骤规划器与繁重的操作基础设施配对。相反，Claude Code 在丰富的操作harness内为模型提供了最大的决策自由度。工程复杂性的存在不是为了限制模型的决策，而是为了实现它们。这种由模型推理和harness强制执行的分层架构提出了这样一个问题：代理编码工具是否正在向类似操作系统的抽象收敛，其中核心循环充当内核，而其他一切都构成操作系统。</p></div>
+
+<div class="bilingual-pair"><p class="src">The design gains additional significance as frontier models converge in practical capability for coding tasks: the quality of the surrounding operational harness becomes the principal differentiator, validating an architecture that invests in infrastructure over decision scaffolding. For agent builders, the implication is that investing in deterministic infrastructure such as context management, safety layering, and recovery mechanisms may yield greater reliability gains than adding planning scaffolding around increasingly capable models. Recent native-runtime benchmarking gives this otherwise reasoned claim direct empirical support: holding the model fixed and changing only the surrounding harness shifts a single model’s score on long-horizon tasks by up to 18 points, with Claude Code and OpenClaw among the harnesses tested (Ding et al., 2026).</p><p class="dst">随着前沿模型在编码任务的实际能力上的融合，该设计获得了额外的意义：周围操作harness的质量成为主要的区别因素，验证了投资于基础设施而不是决策脚手架的架构。对于代理构建者来说，这意味着投资于上下文管理、安全分层和恢复机制等确定性基础设施可能会比围绕功能日益强大的模型添加规划脚手架带来更大的可靠性收益。最近的本机运行时基准测试为这一合理的主张提供了直接的实证支持：保持模型固定并仅更改周围的harness可以使单个模型在长期任务上的得分最多改变 18 分，测试的harness包括 Claude Code 和 OpenClaw（Ding 等人，2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">(Tier C) As model capability grows stronger, is the harness still needed for a model like Fable 5 that can read a codebase and fix it on its own? The harness serves the five values of Section 2.1, and only one of them, Capability Amplification, is mainly about how capable the model is. Within it, the part a stronger model affects is the decision scaffolding, like the planning and control logic that some frameworks wrap around the model to guide and constrain it toward a solution. Where the model is already strong, such as in code and mathematics, it reaches a successful solution on its own, so that guidance and constraint are less necessary.</p><p class="dst">（C层）随着模型能力越来越强，像《神鬼寓言5》这样可以读取代码库并自行修复的模型是否还需要harness？harness服务于2.1节的五个价值，其中只有一个，能力放大，主要是关于模型的能力如何。在其中，更强大的模型影响的部分是决策脚手架，例如一些框架围绕模型来指导和约束模型以实现解决方案的规划和控制逻辑。在模型已经很强大的地方，例如在代码和数学方面，它可以自行找到成功的解决方案，因此不需要指导和约束。</p></div>
+
+<div class="bilingual-pair"><p class="src">The other four values are not mainly about how capable the model is, so the harness that serves them stays.</p><p class="dst">其他四个值主要不是关于模型的能力如何，因此为它们服务的harness保留了下来。</p></div>
+
+<div class="bilingual-pair"><p class="src">Reliable Execution is the partial exception: a stronger model reads a request more accurately and fixes its own mistakes a bit better. But the context window is still finite, sessions still resume, and the model still tends to rebuild the same thing a different way each run, so context management and recovery are still needed.</p><p class="dst">可靠执行是部分例外：更强大的模型可以更准确地读取请求，并更好地修复自己的错误。但上下文窗口仍然是有限的，会话仍然恢复，并且模型仍然倾向于在每次运行时以不同的方式重建相同的事物，因此仍然需要上下文管理和恢复。</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety, Security, and Privacy do not depend on capability at all. Deny-first rules, sandboxing, the auto-mode classifier, and audit logs matter as much as before, and a stronger model is riskier, not safer: Fable 5 itself is held back by safety classifiers in higher-risk areas (Anthropic, 2026d). Human Decision Authority is about the person’s right to decide, not the model’s capability, so approval, interruption, and transcripts keep their role.</p><p class="dst">安全、保密和隐私根本不依赖于能力。拒绝优先规则、沙箱、自动模式分类器和审计日志和以前一样重要，更强的模型风险更大，而不是更安全：《神鬼寓言 5》本身在高风险领域受到安全分类器的阻碍（Anthropic，2026d）。人类决策权是关于人的决定权，而不是模型的能力，因此批准、中断和记录保留其作用。</p></div>
+
+<div class="bilingual-pair"><p class="src">Contextual Adaptability is similar: a strong model is still a general model that has not seen your code, so CLAUDE.md, skills, and MCP still fit it to your project. Token economics, which bounds all five, does not relax either, since a better model does not make tokens free.</p><p class="dst">上下文适应性类似：强模型仍然是没有见过你的代码的通用模型，因此 CLAUDE.md、技能和 MCP 仍然适合你的项目。限制所有五个的代币经济学也没有放松，因为更好的模型并不会让代币变得免费。</p></div>
+
+<div class="bilingual-pair"><p class="src">Research bears this out even for the strongest models: the choice of harness alone moves Fable 5’s functional and security pass rates by ten points or more (Compagna, 2026). The harness does not become useless as model capability grows; what changes is only the decision scaffolding, and only where the model is already strong, while everything else it does stays as important as before.</p><p class="dst">即使对于最强大的模型，研究也证明了这一点：仅harness的选择就可以将《神鬼寓言 5》的功能和安全通过率提高十个百分点或更多（Compagna，2026）。harness不会随着模型能力的增长而变得毫无用处；改变的只是决策脚手架，而且只有模型已经很强大的地方，而它所做的其他一切仍然像以前一样重要。</p></div>
+
+<div class="bilingual-pair"><p class="src">Taken together, the preceding sections show that production coding agents face recurring design choices:</p><p class="dst">综上所述，前面的部分表明生产coding agent面临重复的设计选择：</p></div>
+
+<div class="bilingual-pair"><p class="src">where reasoning lives relative to the harness, how the iteration loop is structured, what safety posture to adopt by default, how the extension surface is partitioned, how context is assembled and compressed, how subagents are delegated and orchestrated, and how sessions persist across boundaries. Claude Code’s answers to these questions form a coherent design point that privileges model autonomy within a rich operational harness.</p><p class="dst">推理相对于harness的位置、迭代循环的结构、默认采用的安全态势、扩展表面如何分区、上下文如何组装和压缩、subagent如何委派和编排以及会话如何跨边界持续存在。 Claude Code 对这些问题的回答形成了一个连贯的设计点，在丰富的操作harness中赋予模型自治特权。</p></div>
+
+<div class="bilingual-pair"><p class="src">33</p><p class="dst">33</p></div>
+
+<div class="bilingual-pair"><p class="src">Table 6 Tensions between values, with supporting evidence. Each tension demonstrates that the two values capture genuinely distinct concerns.</p><p class="dst">表 6 价值观之间的张力以及支持证据。每一种张力都表明这两种价值观抓住了真正不同的关注点。</p></div>
+
+<div class="bilingual-pair"><p class="src">Value Pair</p><p class="dst">值对</p></div>
+
+<div class="bilingual-pair"><p class="src">Tension</p><p class="dst">张力</p></div>
+
+<div class="bilingual-pair"><p class="src">Evidence</p><p class="dst">证据</p></div>
+
+<div class="bilingual-pair"><p class="src">Authority × Safety</p><p class="dst">权威×安全</p></div>
+
+<div class="bilingual-pair"><p class="src">Approval fatigue vs. protection</p><p class="dst">批准疲劳与保护</p></div>
+
+<div class="bilingual-pair"><p class="src">93%</p><p class="dst">93%</p></div>
+
+<div class="bilingual-pair"><p class="src">approval rate undermines human vigi- lance (Hughes, 2026); safety must compensate via classifier and sandboxing Safety × Capability Performance vs. defense depth &gt;50-subcommand fallback skips per-subcommand deny checks due to parsing overhead (Adversa.ai, 2026); safety layers share performance constraints Adaptability × Safety Extensibility vs. attack surface Multiple (since patched) CVEs exploited pre-trust MCP server initialization and application of settings environment variables (Donenfeld and Vanunu, 2026) Capability × Adaptability Proactivity vs. disruption 12 to 18% more tasks but preference drops at high frequencies (Chen et al., 2025) Capability × Reliability Velocity vs. coherence Bounded context prevents full codebase awareness (Sec- tion 7); subagent isolation limits cross-agent consis- tency (Section 8); complexity increases observed in adjacent tools (He et al., 2025) This philosophy assumes that rich deterministic infrastructure can adequately support unconstrained model judgment. The following subsections examine where this assumption is tested.</p><p class="dst">批准率降低了人类的警惕性（Hughes，2026）；安全性必须通过分类器和沙箱进行补偿 安全性 × 能力 性能与防御深度 &gt;50 个子命令后备会由于解析开销而跳过每个子命令的拒绝检查（Adversa.ai，2026）；安全层共享性能约束 适应性 × 安全性 可扩展性与攻击面 多个（已修补）CVE 利用预信任 MCP 服务器初始化和设置环境变量的应用（Donenfeld 和 Vanunu，2026） 能力 × 适应性 主动性与中断 任务增加 12% 至 18%，但偏好度在高频率下下降（Chen 等人，2025） 能力 × 可靠性 速度与一致性 有界上下文阻止完整的代码库意识（第 7 节）；subagent隔离限制了跨代理一致性（第 8 节）；在相邻工具中观察到复杂性增加（He et al., 2025）这种哲学假设丰富的确定性基础设施可以充分支持无约束的模型判断。以下小节将探讨该假设的检验情况。</p></div>
+
+<div class="bilingual-pair"><p class="src">12.2</p><p class="dst">12.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Value Tensions</p><p class="dst">价值紧张</p></div>
+
+<div class="bilingual-pair"><p class="src">The five values identified in Section 2.1 generate tensions where pursuing one value constrains another (Table 6). These tensions are not design failures; they are structural consequences of pursuing multiple values simultaneously. We report the tensions with the strongest supporting evidence, not the full combinatorial set.</p><p class="dst">第 2.1 节中确定的五个价值观会产生紧张关系，其中追求一种价值观会限制另一种价值观（表 6）。这些紧张局势并非设计失败，而是设计失败。它们是同时追求多种价值观的结构性后果。我们用最有力的支持证据来报告紧张局势，而不是完整的组合集。</p></div>
+
+<div class="bilingual-pair"><p class="src">A separate question is whether short-term gains weaken long-term developer capability (Section 2.4). A randomized controlled trial of 16 experienced developers across 246 tasks (Becker et al., 2025) found that AI tools made developers 19% slower, despite a perceived 20% improvement. A causal analysis of Cursor adoption across 807 repositories (He et al., 2025) found that code complexity increased by 40.7%. An EEG study of 54 participants (Kosmyna et al., 2025) found that LLM users showed weakened neural connectivity that persisted after AI was removed. Researchers have proposed protocols for measuring cognitive offloading in AI-assisted programming, motivated by concerns that students using AI produce applications without understanding the underlying logic (Aiersilan, 2026). These findings, combined with a 25% decline in entry-level tech hiring between 2023 and 2024 (Rak, 2025), suggest that the tension between capability amplification and long-term sustainability extends beyond individual productivity to the broader developer pipeline. This evidence motivates the long-term capability question but does not target Claude Code’s architecture specifically. It is most relevant to agent systems that rely on bounded context, tool-use loops, and local generation decisions.</p><p class="dst">另一个问题是短期收益是否会削弱开发人员的长期能力（第 2.4 节）。对 16 名经验丰富的开发人员进行的一项针对 246 项任务的随机对照试验（Becker 等人，2025 年）发现，人工智能工具使开发人员的速度慢了 19%，尽管人们认为 AI 工具的速度提高了 20%。对 807 个存储库采用 Cursor 的因果分析（He et al., 2025）发现代码复杂性增加了 40.7%。一项针对 54 名参与者的脑电图研究（Kosmyna 等人，2025）发现，法学硕士用户的神经连接能力减弱，在人工智能被移除后，这种现象仍然存在。研究人员提出了测量人工智能辅助编程中认知卸载的协议，其动机是担心使用人工智能的学生在不了解底层逻辑的情况下生成应用程序（Aiersilan，2026）。这些发现，加上 2023 年至 2024 年间入门级技术招聘下降 25%（Rak，2025），表明能力放大和长期可持续性之间的紧张关系超出了个人生产力，扩展到了更广泛的开发人员渠道。该证据引发了长期能力问题，但并未专门针对 Claude Code 的架构。它与依赖有界上下文、工具使用循环和本地生成决策的代理系统最相关。</p></div>
+
+<div class="bilingual-pair"><p class="src">12.3</p><p class="dst">12.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Architectural Trade-offs</p><p class="dst">架构权衡</p></div>
+
+<div class="bilingual-pair"><p class="src">The tensions in Table 6 manifest as concrete architectural trade-offs in four areas. The long-term sustainability concerns documented above surface in the empirical predictions of Section 12.4.</p><p class="dst">表 6 中的紧张局势表现为四个领域的具体架构权衡。第 12.4 节的实证预测中记录了长期可持续性问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety vs. autonomy.</p><p class="dst">安全与自主。</p></div>
+
+<div class="bilingual-pair"><p class="src">The permission modes (five always present, plus auto when the classifier feature flag is</p><p class="dst">权限模式（五种始终存在，当分类器功能标志为自动时</p></div>
+
+<div class="bilingual-pair"><p class="src">active, and the internal bubble mode) create a gradient from plan (user approves all plans) through default, acceptEdits, auto (ML classifier), to bypassPermissions (skips most prompts but safety-critical checks remain). The progression represents a monotonically decreasing safety gradient with increasing autonomy.</p><p class="dst">活动和内部气泡模式）创建从计划（用户批准所有计划）到默认、acceptEdits、自动（ML 分类器）到绕过权限（跳过大多数提示，但仍然保留安全关键检查）的渐变。该进展代表随着自主性的增加，安全梯度单调递减。</p></div>
+
+<div class="bilingual-pair"><p class="src">Not restoring session-scoped permissions from the transcript reflects a deliberate choice to err toward safety:</p><p class="dst">不从记录中恢复会话范围的权限反映了故意选择安全错误：</p></div>
+
+<div class="bilingual-pair"><p class="src">a new process starts without the old session grants.</p><p class="dst">新进程在没有旧会话授权的情况下启动。</p></div>
+
+<div class="bilingual-pair"><p class="src">34</p><p class="dst">34</p></div>
+
+<div class="bilingual-pair"><p class="src">The safety-autonomy gradient is shaped not only by architectural design but by user behavior. Anthropic’s auto-mode analysis (Hughes, 2026) found that users approve approximately 93% of permission prompts, indicating that approval fatigue renders interactive confirmation behaviorally unreliable. Longitudinal usage data (McCain et al., 2026) shows that auto-approve rates increase from approximately 20% at fewer than 50 sessions to over 40% by 750 sessions, with substantial increases in session duration. These patterns suggest that the gradient is navigated not by deliberate mode selection but by gradual habituation. Sandboxing reduced the frequency of permission prompts by an estimated 84% (Dworken and Weller-Davies, 2025), reframing the problem as a human-factors concern: the architectural response to unreliable human approval is to reduce the number of decisions humans must make.</p><p class="dst">安全-自主梯度不仅由架构设计决定，还由用户行为决定。 Anthropic 的自动模式分析（Hughes，2026）发现用户批准了大约 93% 的权限提示，这表明批准疲劳导致交互式确认行为不可靠。纵向使用数据（McCain 等人，2026 年）显示，自动批准率从少于 50 个会话时的约 20% 增加到 750 个会话时的 40% 以上，并且会话持续时间大幅增加。这些模式表明，梯度不是通过刻意的模式选择来引导的，而是通过逐渐习惯来引导的。沙盒将权限提示的频率减少了约 84%（Dworken 和 Weller-Davies，2025），将问题重新定义为人为因素问题：对不可靠的人类批准的架构响应是减少人类必须做出的决策数量。</p></div>
+
+<div class="bilingual-pair"><p class="src">More fundamentally, the defense-in-depth architecture described in Section 5 rests on an independence assumption: if one safety layer fails, others catch the violation. But Claude Code’s safety layers share common performance and economic constraints. The auto-mode classifier is a separate LLM call with direct token cost. The bashSecurity.ts module performs sequential AST-based checks with parsing latency. The deny-first rule evaluation operates on command structure. When performance pressure pushes toward reducing these costs, layers can degrade simultaneously. Security researchers (Adversa.ai, 2026) have documented that commands with more than 50 subcommands fall back to a single generic approval prompt instead of running per-subcommand deny-rule checks, because per-subcommand parsing caused UI freezes, demonstrating that defense-in-depth fails when the independence assumption is violated.</p><p class="dst">更根本的是，第 5 节中描述的深度防御架构基于一个独立假设：如果一个安全层发生故障，其他安全层就会发现违规行为。但 Claude Code 的安全层具有共同的性能和经济限制。自动模式分类器是一个单独的 LLM 调用，具有直接token成本。 bashSecurity.ts 模块执行基于 AST 的顺序检查，并具有解析延迟。拒绝优先规则评估在命令结构上运行。当性能压力推动降低这些成本时，各层可能会同时降级。安全研究人员（Adversa.ai，2026）记录了具有超过 50 个子命令的命令会回退到单个通用批准提示，而不是运行每个子命令拒绝规则检查，因为每个子命令解析导致 UI 冻结，这表明当违反独立性假设时，深度防御会失败。</p></div>
+
+<div class="bilingual-pair"><p class="src">This tension is structural. Any LLM-based agent system that uses the model itself for safety evaluation faces it. The relevant evaluation criterion is not whether any individual layer can be bypassed, but how many independent layers must fail simultaneously and whether they share failure modes.</p><p class="dst">这种紧张是结构性的。任何使用模型本身进行安全评估的基于LLM的代理系统都面临着它。相关的评估标准不是是否可以绕过任何单个层，而是有多少个独立层必须同时发生故障以及它们是否共享故障模式。</p></div>
+
+<div class="bilingual-pair"><p class="src">Permission model under adversarial conditions.</p><p class="dst">对抗条件下的权限模型。</p></div>
+
+<div class="bilingual-pair"><p class="src">Independent security research provides empirical validation</p><p class="dst">独立安全研究提供实证验证</p></div>
+
+<div class="bilingual-pair"><p class="src">of the permission architecture, specifically by revealing a temporal ordering property not captured in Figure 4.</p><p class="dst">权限架构的详细信息，特别是通过揭示图 4 中未捕获的时间排序属性。</p></div>
+
+<div class="bilingual-pair"><p class="src">Two independently verified vulnerabilities share a root cause in pre-trust initialization ordering: code executing during project initialization (MCP server connections and application of settings environment variables) ran, in earlier releases, before the user accepted the interactive trust dialog5. That pre-trust execution window fell outside the deny-first evaluation pipeline (permissions.ts), creating a structurally privileged phase where the safety guarantees documented in Section 5 did not yet apply. In the analyzed snapshot, the standard interactive startup path requires trust acceptance before hook execution, project MCP server connections, and application of project-scoped settings environment variables beyond a safe allowlist (hooks.ts, main.tsx, managedEnv.ts).</p><p class="dst">两个独立验证的漏洞在预信任初始化顺序中具有共同的根本原因：在早期版本中，在用户接受交互式信任对话框之前，在项目初始化期间执行的代码（MCP 服务器连接和设置环境变量的应用程序）运行。该预信任执行窗口超出了拒绝优先评估管道 (permissions.ts)，从而创建了一个结构性特权阶段，其中第 5 节中记录的安全保证尚未适用。在分析的快照中，标准交互式启动路径需要在钩子执行、项目 MCP 服务器连接以及应用超出安全允许列表（hooks.ts、main.tsx、managedEnv.ts）的项目范围设置环境变量之前接受信任。</p></div>
+
+<div class="bilingual-pair"><p class="src">This pattern reveals that the permission pipeline depicts a spatial ordering of safety checks but does not capture the temporal dimension: specifically, when during session initialization each mechanism becomes active. The pre-patch initialization sequence (MCP server execution, then trust acceptance, then permission enforcement) created a window where the extensibility architecture (Section 6) operated before the safety architecture (Section 5) was fully engaged. This finding refines the extensibility-versus-simplicity tension by adding a security dimension: extensibility creates attack surface not only through combinatorial complexity but through initialization ordering.</p><p class="dst">这种模式揭示了权限管道描述了安全检查的空间顺序，但没有捕获时间维度：具体来说，当在会话初始化期间每个机制变得活跃时。预补丁初始化序列（MCP 服务器执行，然后信任接受，然后权限执行）创建了一个窗口，在安全架构（第 5 节）完全参与之前，可扩展性架构（第 6 节）在该窗口中运行。这一发现通过添加安全维度来细化可扩展性与简单性之间的紧张关系：可扩展性不仅通过组合复杂性而且通过初始化排序来创建攻击面。</p></div>
+
+<div class="bilingual-pair"><p class="src">Context efficiency vs. transparency.</p><p class="dst">上下文效率与透明度。</p></div>
+
+<div class="bilingual-pair"><p class="src">The five-layer compaction pipeline achieves effective context management, but compression is largely invisible to the user. When budget reduction replaces a long tool output with a reference, when context collapse substitutes messages with a summary (described in the source as “a read-time projection over the REPL’s full history”), or when snip trims older history, the user has no easy way to inspect what was lost. The cache-aware behavior of microcompact adds further opacity, as compression decisions are influenced by prompt caching in ways not visible to the user. External research on summary-based compaction documents two costs beyond opacity that the source-level view does not surface: the summarization step is a blocking inference stall, and it is non-deterministic, with the retained content fluctuating across runs on identical inputs (Cim et al., 2026).</p><p class="dst">五层压缩管道实现了有效的上下文管理，但压缩对于用户来说基本上是不可见的。当预算减少用参考替换长工具输出时，当上下文崩溃用摘要替换消息时（在源代码中描述为“对 REPL 完整历史记录的读取时间投影”），或者当剪裁修剪旧历史记录时，用户没有简单的方法来检查丢失的内容。 microcompact 的缓存感知行为进一步增加了不透明性，因为压缩决策会以用户不可见的方式受到即时缓存的影响。基于摘要的压缩的外部研究记录了源级视图未显示的除了不透明度之外的两个成本：摘要步骤是阻塞推理停顿，并且它是非确定性的，保留的内容在相同输入的运行中波动（Cim 等人，2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">5The two pre-trust ordering vulnerabilities are CVE-2025-59536 (CVSS 8.7) and CVE-2026-21852 (CVSS 5.3) (Donenfeld and Vanunu, 2026), discovered by Check Point Research. CVE-2025-54794 and CVE-2025-54795 (Beber, 2025) exploit path validation and command parsing flaws elsewhere in the permission pipeline, separately. All four were patched within weeks of disclosure.</p><p class="dst">5这两个预信任排序漏洞是由 Check Point Research 发现的 CVE-2025-59536 (CVSS 8.7) 和 CVE-2026-21852 (CVSS 5.3)（Donenfeld 和 Vanunu，2026）。 CVE-2025-54794 和 CVE-2025-54795（Beber，2025）分别利用权限管道中其他位置的路径验证和命令解析缺陷。所有四个补丁都在披露后几周内得到了修复。</p></div>
+
+<div class="bilingual-pair"><p class="src">35</p><p class="dst">35</p></div>
+
+<div class="bilingual-pair"><p class="src">Simplicity vs. extensibility.</p><p class="dst">简单性与可扩展性。</p></div>
+
+<div class="bilingual-pair"><p class="src">The four extension mechanisms enable rich customization but create combinatorial</p><p class="dst">四种扩展机制可实现丰富的定制，但会创建组合</p></div>
+
+<div class="bilingual-pair"><p class="src">interactions. A plugin contributes a PreToolUse hook that modifies tool inputs. The auto-mode classifier reads cached CLAUDE.md content. Path-scoped rules load lazily when new directories are read, potentially changing classifier behavior mid-conversation. The permission handler’s four branches interact with the hook pipeline at multiple points. These cross-cutting concerns create emergent behaviors difficult to predict from any single configuration file.</p><p class="dst">互动。插件提供了一个 PreToolUse 钩子来修改工具输入。自动模式分类器读取缓存的 CLAUDE.md 内容。当读取新目录时，路径范围的规则会延迟加载，这可能会在对话中改变分类器的行为。权限处理程序的四个分支在多个点与钩子管道交互。这些横切关注点会产生难以从任何单个配置文件中预测的紧急行为。</p></div>
+
+<div class="bilingual-pair"><p class="src">12.4</p><p class="dst">12.4</p></div>
+
+<div class="bilingual-pair"><p class="src">Empirical Predictions and Early Signals</p><p class="dst">经验预测和早期信号</p></div>
+
+<div class="bilingual-pair"><p class="src">The architectural properties documented in this paper generate testable predictions about code quality outcomes not derivable from the source code alone. The bounded context window (Section 7) prevents the agent from maintaining simultaneous awareness of the full codebase: the five-layer compaction pipeline preserves useful information but introduces lossy compression at each stage. This makes it architecturally predicted that agent-generated code will exhibit higher rates of pattern duplication and convention violation than code produced with full codebase visibility. Subagent isolation (Section 8), where each subagent operates in its own context window with an independently assembled tool pool, compounds the effect: parallel agents can independently re-implement solutions that already exist elsewhere. The design philosophy of Section 12.1 trusts the model to make good local decisions, but good local decisions can produce poor global outcomes when the model lacks global context.</p><p class="dst">本文中记录的架构属性生成有关代码质量结果的可测试预测，而这些预测不能仅从源代码中得出。有界上下文窗口（第 7 节）阻止代理保持对完整代码库的同时感知：五层压缩管道保留有用的信息，但在每个阶段引入有损压缩。这使得从架构上预测代理生成的代码将比使用完整代码库可见性生成的代码表现出更高的模式重复和约定违反率。subagent隔离（第 8 节），其中每个subagent在其自己的上下文窗口中使用独立组装的工具池运行，复合了效果：并行代理可以独立地重新实现其他地方已经存在的解决方案。第 12.1 节的设计理念相信模型能够做出良好的局部决策，但当模型缺乏全局背景时，良好的局部决策可能会产生较差的全局结果。</p></div>
+
+<div class="bilingual-pair"><p class="src">Published empirical work on architecturally similar tools provides data consistent with these predictions. A causal analysis of Cursor adoption across 807 repositories (He et al., 2025) found a statistically significant increase in code complexity, with an initial velocity spike that dissipated to baseline by month three. Rising complexity was associated with a proportional decrease in future development velocity, suggesting that short-term gains can be offset by later maintenance costs6. A large-scale audit of 304,000 AI-authored commits across 6,275 repositories (Liu et al., 2026) found measurable technical debt, with approximately one-quarter of AI-introduced issues persisting to the latest revision and security-related issues persisting at a substantially higher rate. While these studies target adjacent systems, the architectural parallels (bounded context, tool-use loops, local generation decisions) make them relevant comparison points for the design analyzed here. A controlled minimal-pair study run on Claude Code itself sharpens where these effects are measurable: code cleanliness did not change task pass rate, but cleaner inputs reduced token use by 7 to 8% and file revisitations by 34% (Trivedi and Schmitt, 2026), indicating that the operational footprint (cost and navigation), rather than raw success, is where the harness’s handling of context most visibly registers.</p><p class="dst">已发表的关于架构相似工具的实证研究提供了与这些预测一致的数据。对 807 个存储库采用 Cursor 的因果分析（He et al., 2025）发现，代码复杂性在统计上显着增加，初始速度峰值在第三个月时消散到基线。复杂性的上升与未来开发速度的成比例下降相关，这表明短期收益可以被后期的维护成本所抵消6。对 6,275 个存储库中 304,000 个人工智能编写的提交进行的大规模审计（Liu 等人，2026）发现了可衡量的技术债务，大约四分之一的人工智能引入的问题持续到最新版本，而与安全相关的问题持续存在的比例要高得多。虽然这些研究针对的是相邻系统，但架构上的相似之处（有界上下文、工具使用循环、本地生成决策）使它们成为此处分析的设计的相关比较点。在 Claude Code 上运行的受控最小对研究本身在这些影响可测量的地方变得更加尖锐：代码清洁度并没有改变任务通过率，但更清洁的输入将token使用量减少了 7% 到 8%，文件重新访问量减少了 34%（Trivedi 和 Schmitt，2026），这表明操作足迹（成本和导航），而不是原始成功，是harness对上下文的处理最明显的地方。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s context management pipeline is specifically designed to mitigate these effects: graduated compression preserves the most recent and most relevant context, cache-aware compaction avoids invalidating prompt caches during compression, read-time projection maintains full history for reconstruction while presenting a compressed view to the model, and subagent summary isolation prevents exploratory noise from accumulating in the parent context. Whether these mechanisms are sufficient to overcome the structural limitations of bounded context is a directly measurable empirical question that the source-level analysis in this paper cannot resolve.</p><p class="dst">Claude Code 的上下文管理管道专门设计用于减轻这些影响：分级压缩保留最新和最相关的上下文，缓存感知压缩避免在压缩期间使提示缓存无效，读取时投影在向模型呈现压缩视图的同时保留完整的重建历史记录，subagent摘要隔离可防止探索性噪声在父上下文中累积。这些机制是否足以克服有界上下文的结构限制，是一个可直接测量的实证问题，本文的源级分析无法解决。</p></div>
+
+<div class="bilingual-pair"><p class="src">12.5</p><p class="dst">12.5</p></div>
+
+<div class="bilingual-pair"><p class="src">Limitations</p><p class="dst">局限性</p></div>
+
+<div class="bilingual-pair"><p class="src">Beyond the methodological limitations described in the appendix, several analytical constraints apply. The memoized context assembly functions (getSystemContext() and getUserContext() both use lodash memoize at context.ts) mean that git status and CLAUDE.md content are cached rather than recomputed on every turn. Dynamic changes during a conversation may not be reflected immediately, though compaction can clear caches and lazy-loaded path-scoped rules provide a partial counter-mechanism.</p><p class="dst">除了附录中描述的方法限制之外，还存在一些分析限制。记忆上下文组装函数（getSystemContext() 和 getUserContext() 都在 context.ts 中使用 lodash memoize）意味着 git status 和 CLAUDE.md 内容会被缓存，而不是每次都重新计算。尽管压缩可以清除缓存并且延迟加载的路径范围规则提供了部分反机制，但会话期间的动态变化可能不会立即反映出来。</p></div>
+
+<div class="bilingual-pair"><p class="src">Feature flags create build-time variability. In a build where TRANSCRIPT_CLASSIFIER is false, the entire auto-mode classifier is eliminated. Feature-gated modules use dynamic require() rather than static import (e.g., query.ts for context collapse), because feature() only works in if/ternary conditions due to a bun:bundle tree-shaking constraint. Different build targets may produce functionally different applications.</p><p class="dst">功能标志会产生构建时的可变性。在 TRANSCRIPT_CLASSIFIER 为 false 的构建中，整个自动模式分类器将被消除。功能门控模块使用动态 require() 而不是静态导入（例如，用于上下文折叠的 query.ts），因为由于 Bun:bundle 树摇晃约束，feature() 只能在 if/三元条件下工作。不同的构建目标可能会产生功能不同的应用程序。</p></div>
+
+<div class="bilingual-pair"><p class="src">6Complexity +40.7% (p &lt; 0.001), with a velocity spike of +281% in month one and baseline performance by month three.</p><p class="dst">6复杂性 +40.7% (p &lt; 0.001)，第一个月速度峰值 +281%，第三个月达到基线性能。</p></div>
+
+<div class="bilingual-pair"><p class="src">36</p><p class="dst">36</p></div>
+
+<div class="bilingual-pair"><p class="src">12.6</p><p class="dst">12.6</p></div>
+
+<div class="bilingual-pair"><p class="src">Emerging Directions</p><p class="dst">新兴方向</p></div>
+
+<div class="bilingual-pair"><p class="src">Several aspects of the implementation relate to broader design questions. Longer context windows would reduce compaction pressure, potentially simplifying the graduated pipeline. Multi-modal tools (screenshots, diagrams, UI previews) would expand the tool surface and create new context challenges. Claude Code Desktop already moves in this direction: in its Browser pane, Claude checks UI changes by taking screenshots, inspecting page elements, and interacting with the running app (Anthropic, 2026c). Formal verification of permission properties (for example, proving that deny rules always take precedence, that sandboxed commands cannot escape isolation, or that resumed sessions cannot inherit stale permissions) would provide stronger safety guarantees.</p><p class="dst">实施的几个方面涉及更广泛的设计问题。较长的上下文窗口将减少压实压力，从而可能简化分级管道。多模式工具（屏幕截图、图表、UI 预览）将扩展工具表面并带来新的上下文挑战。 Claude Code Desktop 已经朝这个方向发展：在其浏览器窗格中，Claude 通过截取屏幕截图、检查页面元素以及与正在运行的应用程序交互来检查 UI 更改（Anthropic，2026c）。权限属性的正式验证（例如，证明拒绝规则始终优先，沙盒命令无法逃脱隔离，或者恢复的会话无法继承过时的权限）将提供更强的安全保证。</p></div>
+
+<div class="bilingual-pair"><p class="src">Architectural decoupling.</p><p class="dst">架构解耦。</p></div>
+
+<div class="bilingual-pair"><p class="src">The tightly coupled local architecture analyzed here is one point on a spectrum</p><p class="dst">这里分析的紧密耦合的局部架构只是整个谱系中的一个点</p></div>
+
+<div class="bilingual-pair"><p class="src">that is already evolving. Anthropic’s own Managed Agents work (Martin et al., 2026) describes virtualizing the components of an agent (session, harness, sandbox) so that “each became an interface that made few assumptions about the others, and each could fail or be replaced independently”, drawing an explicit analogy to how operating systems virtualized hardware into processes and files. The Harness Design essay (Rajasekaran, 2026) makes a similar point from a different angle, arguing that better models move the space of useful harness combinations rather than eliminating it. The architecture documented in this paper should therefore be read as a snapshot of a co-evolving system rather than a fixed optimum.</p><p class="dst">这已经在不断发展。 Anthropic 自己的托管代理工作（Martin 等人，2026）描述了对代理组件（会话、harness、沙箱）进行虚拟化，以便“每个组件都成为一个对其他组件进行很少假设的接口，并且每个组件都可以独立失败或被替换”，这与操作系统如何将硬件虚拟化为进程和文件进行了明确的类比。 《Harness Design》论文（Rajasekaran，2026）从不同的角度提出了类似的观点，认为更好的模型会移动有用的harness组合的空间，而不是消除它。因此，本文中记录的架构应被视为共同进化系统的快照，而不是固定的最佳值。</p></div>
+
+<div class="bilingual-pair"><p class="src">Cloud-agent reports make this concrete without relying on the operating-system analogy. Cursor separates the agent loop, machine state, and conversation state, and treats VM checkpointing, network policy, secret handling, and credential management as part of the agent product (Ma, 2026). LangChain’s Managed Deep Agents makes a similar move by placing durable threads, checkpointing, streaming, context, observability, and human-in-the-loop workflows in the managed runtime (LangChain, 2026c). Google’s Antigravity gives people artifacts such as plans, screenshots, and recordings to check an agent’s work (Google, 2025). DeepSeek Harness makes runtime components, including the agent loop and session log, replaceable through plugin configuration (DeepSeek-AI, 2026). The useful design question is therefore runtime ownership: which layer owns the loop, state, sandbox, policy, and recovery path?</p><p class="dst">云代理报告使这一点变得具体，而不依赖于操作系统的类比。 Cursor 将代理循环、机器状态和会话状态分开，并将虚拟机检查点、网络策略、秘密处理和凭证管理视为代理产品的一部分（Ma，2026）。 LangChain 的托管深度代理也采取了类似的举措，在托管运行时中放置持久线程、检查点、流、上下文、可观察性和人机交互工作流程（LangChain，2026c）。谷歌的反重力为人们提供了计划、屏幕截图和录音等工件来检查特工的工作（谷歌，2025）。 DeepSeek Harness 使运行时组件（包括代理循环和会话日志）可以通过插件配置进行替换（DeepSeek-AI，2026）。因此，有用的设计问题是运行时所有权：哪一层拥有循环、状态、沙箱、策略和恢复路径？</p></div>
+
+<div class="bilingual-pair"><p class="src">Adapting models and harnesses.</p><p class="dst">调整模型和harness。</p></div>
+
+<div class="bilingual-pair"><p class="src">Automated adaptation can change the harness, the model, or both. Yang</p><p class="dst">自动适应可以改变harness、模型或两者。杨</p></div>
+
+<div class="bilingual-pair"><p class="src">et al. (2026b) keep model weights fixed and use failure traces to revise instructions, tools, hooks, and context management. Yu et al. (2026) go one step further: an expert model corrects failed turns in a smaller model’s own traces, and these corrections become fine-tuning data for a model that is then evaluated with the evolved harness.</p><p class="dst">等人。 (2026b) 保持模型权重固定，并使用故障跟踪来修改指令、工具、挂钩和上下文管理。于等人。 （2026）更进一步：专家模型纠正较小模型自身轨迹中的失败转弯，这些纠正成为模型的微调数据，然后使用进化的harness进行评估。</p></div>
+
+<div class="bilingual-pair"><p class="src">Memory as a first-class subsystem.</p><p class="dst">内存作为一流的子系统。</p></div>
+
+<div class="bilingual-pair"><p class="src">The memory survey of Hu et al. (2025) argues that agent memory is</p><p class="dst">胡等人的记忆调查。 (2025) 认为主体记忆是</p></div>
+
+<div class="bilingual-pair"><p class="src">becoming a distinct cognitive substrate rather than a side effect of context window management, and identifies automated memory management, RL-driven memory, and trustworthy memory (privacy, explainability, and hallucination robustness) as open frontiers. Claude Code today exposes the factual tier (CLAUDE.md, auto memory) and the working tier (the conversation window). The experiential tier (accumulated, automatically curated playbooks of strategies learned from past sessions) is the natural next step, and the context-engineering literature (Zhang et al., 2025a) has started to provide mechanisms for that accumulation.</p><p class="dst">成为一种独特的认知基础，而不是上下文窗口管理的副作用，并将自动记忆管理、强化学习驱动的记忆和可信记忆（隐私、可解释性和幻觉鲁棒性）确定为开放前沿。 Claude Code 今天公开了事实层（CLAUDE.md，自动记忆）和工作层（对话窗口）。体验层（从过去的课程中学习到的策略的积累、自动策划的剧本）是自然的下一步，上下文工程文献（Zhang 等人，2025a）已经开始提供这种积累的机制。</p></div>
+
+<div class="bilingual-pair"><p class="src">Context Hub makes the boundary visible. LangSmith Context Hub treats AGENTS.md files, skills, policies, examples, and related bundles as versioned and reviewable artifacts, with tags for deployment across environ- ments (LangChain, 2026a). That is a different design point from Claude Code’s file hierarchy, but it names the same problem: context needs a lifecycle, not only a token budget. Skills raise a related maintenance problem, because an update to one skill can affect others. Yang et al. (2026a) represent dependencies, joint use, and conflicts among skills in a graph, revise related skills together, and check each combined change by replaying relevant cases.</p><p class="dst">Context Hub 使边界可见。 LangSmith Context Hub 将 AGENTS.md 文件、技能、策略、示例和相关捆绑包视为版本化和可审查的工件，并带有用于跨环境部署的标签（LangChain，2026a）。这是与 Claude Code 的文件层次结构不同的设计点，但它提出了相同的问题：上下文需要生命周期，而不仅仅是token预算。技能会引发相关的维护问题，因为一项技能的更新可能会影响其他技能。杨等人。 (2026a) 用图表表示技能之间的依赖关系、共同使用和冲突，一起修改相关技能，并通过重放相关案例来检查每个组合的变化。</p></div>
+
+<div class="bilingual-pair"><p class="src">Observability and silent failure.</p><p class="dst">可观察性和静默失败。</p></div>
+
+<div class="bilingual-pair"><p class="src">Industry surveys suggest that the dominant failure mode of deployed agents is</p><p class="dst">行业调查表明，已部署代理的主要故障模式是</p></div>
+
+<div class="bilingual-pair"><p class="src">not crashes but silent mistakes. Bessemer’s 2026 infrastructure report (Wade et al., 2026) estimates that “78% of AI failures are invisible”, while LangChain’s 1,340-respondent state-of-agent-engineering survey (LangChain, 2026d) identifies quality, not cost, as the top barrier to production use and finds a wide gap between 37 observability (nearly 89% adoption) and offline evaluation (52.4%). The architecture analyzed here gives operators visibility into tool calls, hooks, and session transcripts. Closing the evaluation gap likely requires additional scaffolding (generator-evaluator separation, sprint contracts, and post-hoc checks of the kind discussed in Rajasekaran (2026)) rather than model improvements alone.</p><p class="dst">不是崩溃，而是无声的错误。 Bessemer 的 2026 年基础设施报告（Wade 等，2026）估计“78% 的人工智能故障是看不见的”，而 LangChain 的 1,340 名受访者代理工程状况调查（LangChain，2026d）将质量而非成本视为生产使用的最大障碍，并发现 37 可观察性（近 89% 采用率）与离线评估之间存在巨大差距（52.4%）。这里分析的架构使操作员能够了解工具调用、挂钩和会话记录。缩小评估差距可能需要额外的脚手架（生成器-评估器分离、冲刺合同以及 Rajasekaran (2026) 中讨论的那种事后检查），而不仅仅是模型改进。</p></div>
+
+<div class="bilingual-pair"><p class="src">OpenAI’s agent-improvement loop makes this operational: traces and feedback become evals, and the resulting evidence becomes a Codex handoff for harness changes (Pasfield, 2026). In that loop, telemetry matters because it turns into a reusable test or a concrete change request.</p><p class="dst">OpenAI 的代理改进循环使这一操作变得可行：跟踪和反馈成为评估，所得证据成为harness更改的 Codex 交接（Pasfield，2026）。在这个循环中，遥测很重要，因为它变成了可重用的测试或具体的变更请求。</p></div>
+
+<div class="bilingual-pair"><p class="src">Governance.</p><p class="dst">治理。</p></div>
+
+<div class="bilingual-pair"><p class="src">Broader governance trends will constrain the design space as agents become more autonomous.</p><p class="dst">随着代理变得更加自主，更广泛的治理趋势将限制设计空间。</p></div>
+
+<div class="bilingual-pair"><p class="src">The International AI Safety Report (Bengio et al., 2026) warns that “AI agents pose heightened risks because they act autonomously, making it harder for humans to intervene before failures cause harm,” and the MIT AI Agent Index (Staufer et al., 2026) finds that only 13.3% of indexed agentic systems publish agent-specific safety cards. Emerging regulatory efforts, including the EU AI Act and evolving copyright debates around AI-generated code, may impose external constraints on logging, transparency, risk management, and human oversight that shape how coding agent architectures evolve.</p><p class="dst">国际人工智能安全报告（Bengio 等人，2026）警告说，“人工智能代理会带来更高的风险，因为它们自主行动，使人类更难在故障造成伤害之前进行干预”，麻省理工学院人工智能代理索引（Staufer 等人，2026）发现，只有 13.3% 的索引代理系统发布了代理特定的安全卡。新兴的监管努力，包括欧盟人工智能法案和围绕人工智能生成代码不断演变的版权争论，可能会对日志记录、透明度、风险管理和人类监督施加外部限制，从而影响coding agent架构的发展。</p></div>
+
+<div class="bilingual-pair"><p class="src">Proactive architectures.</p><p class="dst">主动架构。</p></div>
+
+<div class="bilingual-pair"><p class="src">The feature-gated KAIROS system illustrates how this architecture may evolve</p><p class="dst">功能门控 KAIROS 系统说明了该架构如何演变</p></div>
+
+<div class="bilingual-pair"><p class="src">beyond reactive tool use. KAIROS implements a persistent background agent with tick-based heartbeats:</p><p class="dst">超越反应性工具的使用。 KAIROS 实现了一个带有基于蜱的心跳的持久后台代理：</p></div>
+
+<div class="bilingual-pair"><p class="src">when no user messages are pending, the system injects periodic &lt;tick&gt; prompts, and the model decides whether to act or sleep. The design addresses a documented tension in one study of proactive AI assistants:</p><p class="dst">当没有待处理的用户消息时，系统会注入定期的 &lt;tick&gt; 提示，并且模型决定是执行还是休眠。该设计解决了一项针对主动人工智能助手的研究中记录的紧张局势：</p></div>
+
+<div class="bilingual-pair"><p class="src">task completion increased by 12 to 18%, while user preference dropped at high frequencies (Chen et al., 2025).</p><p class="dst">任务完成率增加了 12% 至 18%，而用户偏好却频繁下降（Chen 等人，2025）。</p></div>
+
+<div class="bilingual-pair"><p class="src">KAIROS tries to resolve this through terminal focus awareness (maximizing autonomous action when the user is away, increasing collaboration when present) and economic throttling via SleepTool (each wake-up costs an API call, and the prompt cache expires after five minutes of inactivity, making sleep/wake an explicit cost optimization). This binding of proactivity to both user presence and token economics is notable, though KAIROS cannot be confirmed as active in production builds.</p><p class="dst">KAIROS 尝试通过终端焦点感知（用户离开时最大化自主操作，在场时增加协作）和通过 SleepTool 进行经济节流（每次唤醒需要一次 API 调用，并且提示缓存在五分钟不活动后过期，使睡眠/唤醒成为显式成本优化）来解决此问题。尽管无法确认 KAIROS 在生产版本中是否活跃，但这种主动性与用户存在和代币经济的结合是值得注意的。</p></div>
+
+<div class="bilingual-pair"><p class="src">12.7</p><p class="dst">12.7</p></div>
+
+<div class="bilingual-pair"><p class="src">Recurring Design Choices</p><p class="dst">重复设计选择</p></div>
+
+<div class="bilingual-pair"><p class="src">Reading the six subsystem analyses together reveals three cross-cutting design commitments that recur across otherwise independent components.</p><p class="dst">一起阅读六个子系统分析揭示了三个跨领域的设计承诺，这些设计承诺在其他独立的组件中重复出现。</p></div>
+
+<div class="bilingual-pair"><p class="src">Graduated layering over monolithic mechanisms.</p><p class="dst">整体机制上的分级分层。</p></div>
+
+<div class="bilingual-pair"><p class="src">Safety, context management, and extensibility all use grad-</p><p class="dst">安全性、上下文管理和可扩展性都使用梯度</p></div>
+
+<div class="bilingual-pair"><p class="src">uated stacks of independent mechanisms rather than single integrated solutions. The permission architecture layers the seven independent stages enumerated in Section 3.5: tool pre-filtering, deny-first rule evaluation, permission-mode constraints, the auto-mode classifier, shell sandboxing, non-restoration of session permissions</p><p class="dst">独立机制的堆栈，而不是单一的集成解决方案。权限架构分层了 3.5 节中列举的七个独立阶段：工具预过滤、拒绝优先规则评估、权限模式约束、自动模式分类器、shell 沙箱、会话权限不恢复</p></div>
+
+<pre class="code-block">from transcripts, and hook interception. Context management layers five compaction stages, lazy-loaded</pre>
+
+<div class="bilingual-pair"><p class="src">CLAUDE.md files, deferred tool schemas, and summary-only subagent returns. Extensibility layers four mechanisms (MCP servers, plugins, skills, and hooks) at different context costs (Section 6). In each case, the design trades simplicity and debuggability for defense in depth, accepting that the interaction between layers can produce emergent behaviors difficult to predict from any single configuration. The OpenClaw and Hermes Agent contrasts in Section 10 show that graduated layering recurs across systems with very different deployment contexts, suggesting that the layering pattern reflects the shared design questions rather than Claude Code-specific implementation choices.</p><p class="dst">CLAUDE.md 文件、延迟工具模式和仅摘要subagent返回。可扩展性以不同的上下文成本分层了四种机制（MCP 服务器、插件、技能和挂钩）（第 6 节）。在每种情况下，设计都会牺牲简单性和可调试性来换取深度防御，并接受层之间的交互可能会产生难以从任何单一配置预测的紧急行为。第 10 节中的 OpenClaw 和 Hermes Agent 对比表明，分级分层在具有非常不同的部署上下文的系统中重复出现，这表明分层模式反映了共享的设计问题，而不是 Claude Code 特定的实现选择。</p></div>
+
+<div class="bilingual-pair"><p class="src">Append-only designs that favor auditability over query power.</p><p class="dst">仅附加设计更注重可审核性而不是查询能力。</p></div>
+
+<div class="bilingual-pair"><p class="src">Session transcripts are append-only JSONL</p><p class="dst">会话记录是仅附加的 JSONL</p></div>
+
+<div class="bilingual-pair"><p class="src">files with read-time chain patching. Session-scoped permissions are not stored in the transcript. Context compaction applies read-time projections over a full history rather than destructive edits. This commitment recurs because it preserves the ability to resume, fork, and audit sessions without modifying previously written state. The cost is that richer structured queries (“show me all tool calls that modified file X across sessions”) require post-hoc reconstruction rather than direct lookup.</p><p class="dst">具有读取时间链修补的文件。会话范围的权限不存储在记录中。上下文压缩对完整历史记录应用读取时间投影，而不是破坏性编辑。此承诺会重复出现，因为它保留了恢复、分叉和审核会话的能力，而无需修改先前写入的状态。代价是更丰富的结构化查询（“向我显示跨会话修改文件 X 的所有工具调用”）需要事后重建而不是直接查找。</p></div>
+
+<div class="bilingual-pair"><p class="src">Model judgment within a deterministic harness.</p><p class="dst">确定性harness内的模型判断。</p></div>
+
+<div class="bilingual-pair"><p class="src">Across all subsystems, the architecture trusts the model’s</p><p class="dst">在所有子系统中，架构都信任模型的</p></div>
+
+<div class="bilingual-pair"><p class="src">judgment within a rich deterministic harness rather than constraining its choices. The estimated 1.6% 38 decision-logic ratio captures this quantitatively: the harness creates conditions (tool routing, permission enforcement, context assembly, recovery logic) under which the model can decide well. Hierarchical permissions preserve safety invariants across agent boundaries, and assembleToolPool() merges built-in and MCP tools into a single unified interface, but the model retains full latitude over which tools to invoke and in what order.</p><p class="dst">在丰富的确定性harness内进行判断，而不是限制其选择。估计的 1.6% 38 决策逻辑比率定量地反映了这一点：harness创建了模型可以做出良好决策的条件（工具路由、权限执行、上下文组装、恢复逻辑）。分层权限保留了跨代理边界的安全不变性，assembleToolPool() 将内置工具和 MCP 工具合并到一个统一的接口中，但模型保留了调用哪些工具以及按什么顺序调用的完全自由度。</p></div>
+
+<div class="bilingual-pair"><p class="src">The trade-off is that good local decisions can produce poor global outcomes when bounded context prevents global awareness, as the empirical predictions of Section 12.4 document.</p><p class="dst">权衡是，当有限环境阻碍全局意识时，良好的局部决策可能会产生糟糕的全局结果，正如第 12.4 节文件的经验预测。</p></div>
+
+<div class="bilingual-pair"><p class="src">13</p><p class="dst">13</p></div>
+
+<div class="bilingual-pair"><p class="src">Future Directions</p><p class="dst">未来的方向</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 12 read the architecture documented in Sections 3 to 9 as a coherent design point and surfaced the tensions, trade-offs, and near-horizon directions that design point implies. This section steps beyond the architecture itself to record six open questions that Section 12.6 partially names and that a growing external literature has sharpened enough to state concretely. These questions cover the paper’s five-value framework (Section 2.1) and the long-term developer-capability question introduced in Section 2.4. They concern governance constraints on the Authority hierarchy (Section 13.5), the observability-evaluation gap on the Safety side (Section 13.1), cross-session persistence on the Reliability side (Section 13.2), four extensions of the Capability frontier (Section 13.3), horizon scaling as a distinct axis of Reliable Execution (Section 13.4), and long-term developer capability reframed as a design question (Section 13.6). Consistent with Section 12.6’s framing, each question is posed in the form whether/how/which. Specific mechanism choices are named when the cited sources name them and left open otherwise.</p><p class="dst">第 12 节将第 3 节至第 9 节中记录的架构视为连贯的设计点，并揭示了设计点所暗示的紧张、权衡和近水平方向。本节超越了架构本身，记录了第 12.6 节部分提及的六个开放问题，并且不断增长的外部文献已经足够清晰地具体说明这些问题。这些问题涵盖了本文的五值框架（第 2.1 节）和第 2.4 节中介绍的长期开发人员能力问题。它们涉及权威层次结构的治理约束（第 13.5 节）、安全方面的可观察性评估差距（第 13.1 节）、可靠性方面的跨会话持久性（第 13.2 节）、能力边界的四个扩展（第 13.3 节）、作为可靠执行的独特轴的水平扩展（第 13.4 节）以及重新构建为设计问题的长期开发人员能力（第 13.6 节）。与第 12.6 节的框架一致，每个问题都以“是否/如何/哪个”的形式提出。具体的机制选择在引用的来源命名时命名，否则保持开放。</p></div>
+
+<div class="bilingual-pair"><p class="src">13.1</p><p class="dst">13.1</p></div>
+
+<div class="bilingual-pair"><p class="src">Silent Failure and the Observability-Evaluation Gap</p><p class="dst">无声的失败和可观察性评估差距</p></div>
+
+<div class="bilingual-pair"><p class="src">The observability-evaluation gap reported in Section 12.6 could reflect a missing tooling layer, a missing evaluation interface inside the harness, or a model-capability ceiling. The sources there do not adjudicate.</p><p class="dst">第 12.6 节中报告的可观察性-评估差距可能反映了缺少的工具层、harness内缺少的评估接口或模型能力上限。那里的消息来源不做裁决。</p></div>
+
+<div class="bilingual-pair"><p class="src">How the silent-mistake failure mode noted in that paragraph should be surfaced is therefore an architectural question for the harness rather than a capability question for the model. Recent empirical work characterises the gap at several resolutions. Cemri et al. (2025) catalogue fourteen failure modes spanning system-design issues, inter-agent misalignment, and task verification. Pathak et al. (2025) build a benchmark of agent trajectories specifically for anomaly detection in traces. Yao et al. (2024) expose consistency gaps via the passk metric, the probability that all k independent trials succeed. Kapoor et al. (2024) argue that current agent benchmarks lack holdouts and cost controls, limiting what observability can actually diagnose.</p><p class="dst">因此，该段落中提到的无声错误故障模式应如何显现是harness的架构问题，而不是模型的能力问题。最近的实证工作描述了几个决议中的差距。塞姆里等人。 (2025) 列出了十四种故障模式，涵盖系统设计问题、代理间错位和任务验证。帕塔克等人。 (2025) 专门针对痕迹中的异常检测建立代理轨迹基准。姚等人。 (2024) 通过 passk 指标暴露一致性差距，即所有 k 个独立试验成功的概率。卡普尔等人。 (2024) 认为当前的代理基准缺乏坚持和成本控制，限制了可观察性实际诊断的内容。</p></div>
+
+<div class="bilingual-pair"><p class="src">Harnesses that update themselves also need fair comparisons. Wang et al. (2026b) compare harness evolution with search over task solutions under matched feedback and inference budgets, and Le et al. (2026) test trained models with a harness held out of training.</p><p class="dst">自我更新的安全带也需要公平的比较。王等人。 (2026b) 将harness的演变与匹配反馈和推理预算下的任务解决方案搜索进行比较，Le 等人。 (2026) 使用训练外的harness来测试经过训练的模型。</p></div>
+
+<div class="bilingual-pair"><p class="src">Against the permission pipeline and tool-orchestration layers analysed in Sections 4 and 5, two architectural questions remain open. First, whether the scaffolding the paper cites from Rajasekaran (2026) (generator- evaluator separation, sprint contracts, post-hoc checks, building on Madaan et al. (2023)’s self-refine pattern) belongs inside the harness (e.g., as additional hook events alongside the 27 documented in Section 6) or outside it as a separate evaluation layer is not settled by the cited sources. Second, whether the existing hook pipeline of Section 6 can host such scaffolding within its current context-cost envelope is a further open question. The observation that closing this gap “likely requires additional scaffolding . . . rather than model improvements alone” (Section 12.6) locates the open work at the harness layer.</p><p class="dst">相对于第 4 节和第 5 节中分析的权限管道和工具编排层，有两个架构问题仍然悬而未决。首先，论文引用的 Rajasekaran (2026) 脚手架（生成器-评估器分离、冲刺合同、事后检查、基于 Madaan 等人 (2023) 的自我完善模式）是否属于harness内部（例如，作为第 6 节中记录的 27 个事件旁边的附加钩子事件），还是作为单独的评估层在harness外部，尚未由引用的来源解决。其次，第 6 节的现有钩子管道是否可以在其当前的上下文成本范围内托管此类脚手架是一个进一步悬而未决的问题。缩小这一差距“可能需要额外的脚手架……而不仅仅是模型改进”（第 12.6 节）的观察结果将开放工作定位在harness层。</p></div>
+
+<div class="bilingual-pair"><p class="src">13.2</p><p class="dst">13.2</p></div>
+
+<div class="bilingual-pair"><p class="src">Persistence: Memory and Longitudinal Colleague Relationships</p><p class="dst">持久性：记忆和纵向同事关系</p></div>
+
+<div class="bilingual-pair"><p class="src">Whether agent state and the human-agent working relationship should persist across sessions, and in what form, is treated by the paper at two distinct layers today. Section 7 documents the four-level CLAUDE.md hierarchy and auto memory. Section 9 documents mostly-append-only JSONL transcripts, with explicit cleanup rewrites; session-scoped permissions are not stored in them. What belongs between these two layers is an open design question: durable state that is neither a static instruction nor a single session’s transcript. Hu et al. (2025) and Zhang et al. (2025a), already cited in Section 12.6, motivate an accumulating layer. Packer et al. (2023) reframes the LLM as an operating system with paged memory. Chhikara et al.</p><p class="dst">今天的论文在两个不同的层面上讨论了代理状态和人类与代理工作关系是否应该在会话中持续存在以及以什么形式存在。第 7 节记录了四级 CLAUDE.md 层次结构和自动内存。第 9 节记录了大部分仅附加的 JSONL 转录本，并进行了显式清理重写；会话范围的权限不存储在其中。这两层之间属于一个开放的设计问题：持久状态既不是静态指令，也不是单个会话的记录。胡等人。 （2025）和张等人。 (2025a)，已在第 12.6 节中引用，激励累积层。帕克等人。 (2023) 将 LLM 重新构建为具有分页内存的操作系统。奇卡拉等人。</p></div>
+
+<div class="bilingual-pair"><p class="src">39</p><p class="dst">39</p></div>
+
+<div class="bilingual-pair"><p class="src">(2025) builds a production-oriented memory store that survives restarts, while Xu et al. (2025) proposes a research agentic-memory design. Wang et al. (2024c) captures reusable procedural traces. Shinn et al. (2023) accumulates self-reflection traces via verbal reinforcement across attempts. Surveys by Zhang et al. (2025b) and Huang et al. (2026) map candidate mechanisms.</p><p class="dst">(2025) 构建了一个面向生产的内存存储，可以在重新启动后继续存在，而 Xu 等人。 (2025) 提出了一种研究代理记忆设计。王等人。 (2024c) 捕获可重用的程序痕迹。辛恩等人。 （2023）通过尝试中的言语强化来积累自我反思的痕迹。张等人的调查。 （2025b）和黄等人。 （2026）映射候选机制。</p></div>
+
+<div class="bilingual-pair"><p class="src">MemGym makes the memory question more concrete. It evaluates dynamic memory formation across tool-use dialogue, deep research, coding, and computer use, rather than only retention of personal facts in chat (Xu et al., 2026). This moves the question from “where should notes be stored?” to “which remembered state helps the agent keep working correctly?” Persistent memory also needs a way to recover from harmful entries. MemSecBench tests whether stored information affects later actions and whether repair keeps specified valid memories intact (Chen et al., 2026).</p><p class="dst">MemGym 让记忆问题变得更加具体。它评估工具使用对话、深入研究、编码和计算机使用中的动态记忆形成，而不仅仅是聊天中个人事实的保留（Xu 等人，2026）。这将问题从“笔记应该存储在哪里？”转移了。 “哪个记住的状态可以帮助代理继续正常工作？”持久内存还需要一种从有害条目中恢复的方法。 MemSecBench 测试存储的信息是否影响后续操作以及修复是否保持指定的有效内存完好无损（Chen 等人，2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">The same persistence question recurs on the human side. Section 12.6 already cites longitudinal autonomy evidence from Huang et al. (2025) and McCain et al. (2026). Dell’Acqua et al. (2025)’s field experiment with 776 Procter &amp; Gamble professionals, together with longitudinal and organisational studies of Copilot rollouts (Stray et al., 2025) and AI-teamwork trajectories (Xiao et al., 2025), report shifts in human-AI work dynamics as collaboration accumulates. Wang et al. (2023) illustrates an embodied agent that accumulates a skill library across tasks. Mollick (2024) frames the human-AI working relationship as co-intelligence.</p><p class="dst">同样的持久性问题也出现在人类身上。第 12.6 节已经引用了 Huang 等人的纵向自治证据。 （2025）和麦凯恩等人。 （2026）。戴尔阿夸等人。 (2025) 对 776 名宝洁专业人员进行的现场实验，以及对 Copilot 部署的纵向和组织研究 (Stray 等人，2025) 以及人工智能团队合作轨迹 (Xiao 等人，2025)，报告了随着协作的积累，人类与人工智能工作动态的变化。王等人。 (2023) 展示了一个跨任务积累技能库的具体代理。 Mollick（2024）将人类与人工智能的工作关系定义为共同智能。</p></div>
+
+<div class="bilingual-pair"><p class="src">Whether a single substrate can carry both a user’s personal instruction hierarchy and a shared organisational context while preserving the file-based transparency of CLAUDE.md that Section 7 documents is an open architectural question. How session-scoped permissions interact with such a substrate, without reintroducing the resume-restoration concern that Section 9 closes as a deliberate safety choice, is a further open question.</p><p class="dst">单个基质是否可以承载用户的个人指令层次结构和共享的组织上下文，同时保留第 7 节文档中的 CLAUDE.md 基于文件的透明度，这是一个开放的架构问题。会话范围的权限如何与这样的底层交互，而不重新引入第 9 节作为有意的安全选择而关闭的恢复恢复问题，是一个进一步开放的问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code’s Projects beta is one product step in this direction: separate cloud sessions add to and draw</p><p class="dst">Claude Code 的 Projects beta 是朝这个方向迈出的一个产品步骤：单独的云会话添加和绘制</p></div>
+
+<pre class="code-block">from a shared project memory that carries decisions across sessions (Anthropic, 2026l). The OpenClaw</pre>
+
+<div class="bilingual-pair"><p class="src">memory subsystem (dreaming, daily notes, hybrid retrieval) and Hermes Agent’s WAL-mode SQLite session store with full-text search, both documented in Sections 10 and 10.2, provide two concrete reference points for how a persistent substrate can sit between a static instruction hierarchy and a single-session transcript.</p><p class="dst">内存子系统（做梦、日常笔记、混合检索）和 Hermes Agent 的带有全文搜索的 WAL 模式 SQLite 会话存储（均记录在第 10 节和 10.2 节中）为如何将持久性底层置于静态指令层次结构和单会话转录本之间提供了两个具体的参考点。</p></div>
+
+<div class="bilingual-pair"><p class="src">13.3</p><p class="dst">13.3</p></div>
+
+<div class="bilingual-pair"><p class="src">Harness Boundary Evolution: Where, When, What, and with Whom the Agent Acts</p><p class="dst">利用边界进化：代理在何处、何时、什么以及与谁一起行动</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 12.6 cites Rajasekaran (2026)’s argument that better models move the space of useful harness combinations rather than eliminating it. Whether that movement will be most pronounced in where the harness runs, when it acts, what it acts on, or with whom it coordinates is not resolved by the source-level analysis in Sections 3 to 9. Each of the four has an active research literature that the paper touches only in passing.</p><p class="dst">第 12.6 节引用了 Rajasekaran（2026）的论点，即更好的模型会移动有用的harness组合的空间，而不是消除它。第 3 节到第 9 节中的源代码分析并不能解决这种运动是否在harness运行的位置、作用时间、作用对象或与谁协调方面最为明显。这四个部分中的每一个都有活跃的研究文献，本文只是顺便提及。</p></div>
+
+<div class="bilingual-pair"><p class="src">Where.</p><p class="dst">在哪里。</p></div>
+
+<div class="bilingual-pair"><p class="src">Martin et al. (2026)’s Managed Agents design virtualizes session, harness, and sandbox into inde- pendently replaceable interfaces. This extends the virtual-memory analogy that Packer et al. (2023) applies to context-window management and that Karpathy (2023) popularizes more broadly. Khattab et al. (2023) treats the harness itself as a compile target.</p><p class="dst">马丁等人。 (2026) 的托管代理设计将会话、harness和沙箱虚拟化为独立的可替换接口。这扩展了 Packer 等人的虚拟内存类比。 (2023) 适用于上下文窗口管理，而 Karpathy (2023) 则更广泛地普及。哈塔布等人。 (2023) 将harness本身视为编译目标。</p></div>
+
+<div class="bilingual-pair"><p class="src">When.</p><p class="dst">什么时候。</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 12.6 already introduces KAIROS as a feature-gated illustration, motivated by the +12% to +18% task-pass gain that Chen et al. (2025) report and the sharp preference penalty (47% vs. 80% to 90%) restricted to the high-frequency Persistent Suggest variant. Claude Code routines use a simpler trigger:</p><p class="dst">第 12.6 节已经介绍了 KAIROS 作为特征门控说明，其动机是 Chen 等人获得了 +12% 到 +18% 的任务传递增益。 (2025) 报告和尖锐偏好惩罚（47% vs. 80% 到 90%）仅限于高频持久建议变体。 Claude Code 例程使用更简单的触发器：</p></div>
+
+<div class="bilingual-pair"><p class="src">they start a new cloud session when a configured schedule, API call, or GitHub event fires (Anthropic, 2026m), whereas KAIROS wakes a background agent and lets it decide at each tick whether to act. Liu et al.</p><p class="dst">当配置的计划、API 调用或 GitHub 事件触发时，它们会启动一个新的云会话（Anthropic，2026m），而 KAIROS 会唤醒后台代理并让它在每次更新时决定是否采取行动。刘等人。</p></div>
+
+<div class="bilingual-pair"><p class="src">(2025), Pu et al. (2025), and Lee et al. (2025) extend the proactivity design space across programming and ambient-interface settings. Pasternak et al. (2025) and Sun et al. (2025) introduce benchmarks and training regimes aimed at sharpening it, and Deng et al. (2025) surveys the broader literature.</p><p class="dst">（2025），Pu 等人。 （2025）和李等人。 (2025) 将主动设计空间扩展到编程和环境界面设置。帕斯捷尔纳克等人。 （2025）和孙等人。 (2025) 引入了旨在强化它的基准和培训制度，Deng 等人。 （2025）调查了更广泛的文献。</p></div>
+
+<div class="bilingual-pair"><p class="src">What.</p><p class="dst">什么。</p></div>
+
+<div class="bilingual-pair"><p class="src">Vision-language-action work extends the harness beyond textual tool returns. Brohan et al. (2023) and Black et al. (2024) train VLA policies that execute physical actions, and Ahn et al. (2022) grounds plans in robot affordances. Industry systems such as Figure AI (2025) and Bjorck et al. (2025) push similar ideas into humanoid control. These systems face the reversibility-weighted risk principle (Table 1) at a cost asymmetry that the principle names but does not quantify for non-textual actions.</p><p class="dst">视觉-语言-行动工作将harness扩展到文本工具返回之外。布罗汉等人。 （2023）和布莱克等人。 (2024) 训练执行物理动作的 VLA 策略，Ahn 等人。 （2022）制定了机器人可供性的计划。 Figure AI (2025) 和 Bjorck 等行业系统。 （2025）将类似的想法推向人形控制。这些系统面临着可逆性加权风险原则（表 1），其成本不对称性被该原则命名，但并未量化非文本操作。</p></div>
+
+<div class="bilingual-pair"><p class="src">40</p><p class="dst">40</p></div>
+
+<div class="bilingual-pair"><p class="src">With whom.</p><p class="dst">和谁。</p></div>
+
+<div class="bilingual-pair"><p class="src">Role-differentiated multi-agent systems (Hong et al. (2023), Li et al. (2023), Chen et al. (2023), Qian et al. (2024)) compose agents with distinct responsibilities. Multi-agent debate (Du et al., 2024; Liang et al., 2024) and graph-structured workflows (Zhuge et al., 2024) explore alternatives to the parent/subagent pattern of Section 8. Guo et al. (2024) surveys this space.</p><p class="dst">角色区分的多智能体系统（Hong et al. (2023)、Li et al. (2023)、Chen et al. (2023)、Qian et al. (2024)）由具有不同职责的智能体组成。多智能体辩论（Du et al., 2024；Liang et al., 2024）和图结构工作流程（Zhuge et al., 2024）探索了第 8 节的父/子智能体模式的替代方案。 （2024）调查了这个空间。</p></div>
+
+<div class="bilingual-pair"><p class="src">Whether a single harness architecture can span all four extensions, or whether the “harness combinations” Rajasekaran (2026) describes will fragment into specialised stacks, is an open design question. The when- extension directly continues the Capability-versus-Adaptability tension in Table 6. The with-whom-extension partially maps onto Capability-versus-Reliability but raises cross-agent consistency concerns that Table 6 does not itself cover. The where- and what-extensions raise further questions the paper’s current subsystem boundaries do not cover: which governance obligations attach when harness components become hosted services (Section 13.5), and how reversibility-weighted risk (Table 1) scales to physical rather than textual effects. How these extensions compose across axes, rather than within any one, is not something the paper’s single-subsystem analyses can resolve.</p><p class="dst">单个harness架构是否可以跨越所有四个扩展，或者 Rajasekaran（2026）描述的“harness组合”是否会分裂成专门的堆栈，是一个开放的设计问题。 When-扩展直接延续了表 6 中的能力与适应性张力。with-whom-扩展部分映射到能力与可靠性，但引起了表 6 本身未涵盖的跨代理一致性问题。何处扩展和什么扩展提出了本文当前子系统边界未涵盖的进一步问题：当harness组件成为托管服务时附加哪些治理义务（第 13.5 节），以及可逆性加权风险（表 1）如何扩展到物理效果而不是文本效果。这些扩展如何跨轴而不是在任何轴内组成，并不是本文的单子系统分析可以解决的问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">13.4</p><p class="dst">13.4</p></div>
+
+<div class="bilingual-pair"><p class="src">Horizon Scaling: From Session to Scientific Program</p><p class="dst">地平线扩展：从会议到科学计划</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 2.1 defines Reliable Execution as spanning “both single-turn correctness and long-horizon dependability.” How the architecture documented in Sections 3, 4 and 7 to 9 continues to support long-horizon dependability as autonomous work extends beyond a single session is an open question. Its primary units are the turn, the session, and the sub-agent. A growing literature targets this regime. Lu et al. (2024) present an end-to-end autonomous research pipeline producing draft manuscripts. Beel et al. (2025) provide an independent SIGIR Forum evaluation of that pipeline, characterising what “autonomous research” currently delivers and where it falls short. Gottweis et al. (2025) develop a multi-agent hypothesis-generation system that runs across days rather than turns, and Novikov et al. (2025) pursue algorithmic discovery over timescales that previously took human experts weeks. Kwa et al.’s METR study measures the task duration at which frontier agents succeed with fixed reliability, giving an empirical frame for this scaling question.</p><p class="dst">第 2.1 节将可靠执行定义为涵盖“单轮正确性和长期可靠性”。当自主工作扩展到单个会话之外时，第 3、4 和 7 至 9 节中记录的架构如何继续支持长期可靠性是一个悬而未决的问题。它的主要单位是回合、会话和subagent。越来越多的文献针对这一政权。卢等人。 （2024）提出了一个端到端的自主研究流程，生成手稿草稿。贝尔等人。 (2025) 提供了对该管道的独立 SIGIR 论坛评估，描述了“自主研究”目前提供的内容以及不足之处。戈特维斯等人。 (2025) 开发了一种多代理假设生成系统，该系统可以跨天运行，而不是轮流运行，Novikov 等人。 （2025）在过去需要人类专家几周时间的时间尺度上追求算法发现。 Kwa 等人的 METR 研究测量了前沿智能体以固定可靠性成功的任务持续时间，为这个规模问题提供了一个经验框架。</p></div>
+
+<div class="bilingual-pair"><p class="src">The Quantitative Goal Persistence benchmark names a narrower failure mode: an agent can make reasonable local tool calls and still stop before a verifier confirms enough valid work units (Cai et al., 2026). For long-horizon coding agents, progress needs an external notion of done, not only a fluent final message.</p><p class="dst">定量目标持久性基准命名了一种更窄的故障模式：代理可以进行合理的本地工具调用，并且仍然在验证者确认足够的有效工作单元之前停止（Cai 等人，2026）。对于长期coding agent来说，进展需要一个外部的完成概念，而不仅仅是流畅的最终消息。</p></div>
+
+<div class="bilingual-pair"><p class="src">SWE Refactor Bench applies the same idea to repository migration: it checks migration requirements separately</p><p class="dst">SWE Refactor Bench 将相同的想法应用于存储库迁移：它单独检查迁移需求</p></div>
+
+<pre class="code-block">from fixed behavior tests, so an incomplete migration and a migration that breaks required behavior appear</pre>
+
+<div class="bilingual-pair"><p class="src">as different failures (Hong et al., 2026).</p><p class="dst">作为不同的失败（Hong et al., 2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Against the paper’s analysis, long-horizon deployment tests whether the context-management pipeline of Section 7, the last-assistant-text return policy of Section 8, and the append-only persistence of Section 9 remain sufficient when sessions compose into multi-session programs. Section 12.4 already frames this as “a directly measurable empirical question” that source-level analysis cannot resolve. Horizon scaling restates that question at the scale of weeks: whether the harness layer alone closes the gap, whether a cross-session memory substrate (Section 13.2) is required, or whether horizon-scale work demands coordination primitives beyond session, sub-agent, and memory, is not something the paper’s session-scoped analyses can settle.</p><p class="dst">根据本文的分析，长期部署测试了当会话组成多会话程序时，第 7 节的上下文管理管道、第 8 节的最后辅助文本返回策略以及第 9 节的仅附加持久性是否仍然足够。第 12.4 节已经将此描述为“一个可直接测量的经验问题”，源级分析无法解决。水平扩展在几周的尺度上重申了这个问题：harness层是否能够单独缩小差距，是否需要跨会话内存基底（第 13.2 节），或者水平规模的工作是否需要会话、subagent和内存之外的协调原语，这些都不是本文的会话范围分析可以解决的问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">(Tier A) A development subsequent to the v2.1.88 snapshot analyzed here makes this question concrete.</p><p class="dst">（A 层）此处分析的 v2.1.88 快照之后的开发使这个问题变得具体。</p></div>
+
+<div class="bilingual-pair"><p class="src">Claude Code v2.1.154 introduced dynamic workflows, in which the model writes a JavaScript orchestration script that a background runtime executes, fanning out to many subagents (bounded at up to a thousand per run) while intermediate results live in script variables outside the model’s context window rather than passing through it (Anthropic, 2026n). Released alongside Claude Opus 4.8 (Anthropic, 2026k), this is precisely a coordination primitive beyond the session, sub-agent, and memory units analyzed here: it relocates the orchestration logic itself out of the conversation, extending the context as scarce resource and isolated subagent boundaries principles (Table 1) from individual subagents to the orchestration layer. Whether orchestration-as-code becomes the dominant long-horizon primitive, and how its token cost and reduced human mid-run oversight trade against its reliability gains, is an open question the session-scoped analysis here cannot settle.</p><p class="dst">Claude Code v2.1.154 引入了动态工作流程，其中模型编写一个由后台运行时执行的 JavaScript 编排脚本，分散到许多subagent（每次运行最多一千个），而中间结果位于模型上下文窗口外部的脚本变量中，而不是通过它传递（Anthropic，2026n）。与 Claude Opus 4.8（Anthropic，2026k）一起发布，这正是超出此处分析的会话、subagent和内存单元的协调原语：它将编排逻辑本身从对话中重新定位，将上下文作为稀缺资源和隔离的subagent边界原则（表 1）从单个subagent扩展到编排层。编排即代码是否成为占主导地位的长期原语，以及其代币成本和减少的人工中期监督交易如何与其可靠性收益相抵触，是一个会话范围分析无法解决的悬而未决的问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">41</p><p class="dst">41</p></div>
+
+<div class="bilingual-pair"><p class="src">13.5</p><p class="dst">13.5</p></div>
+
+<div class="bilingual-pair"><p class="src">Governance and Oversight at Scale</p><p class="dst">大规模治理和监督</p></div>
+
+<div class="bilingual-pair"><p class="src">Emerging AI regulation adds an external constraint on the architectures that implement the Authority hierarchy of Anthropic, operators, and users documented in Section 2.1. Which logging, transparency, and human-oversight affordances coding-agent architectures should expose under that external constraint remains an open design question. The European Commission’s GPAI Code of Practice (European Commission, 2025a) and implementation guidelines (European Commission, 2025b) illustrate how general-purpose AI governance is moving toward more explicit expectations for documentation, risk management, transparency, and oversight. The MIT AI Agent Index (Staufer et al., 2026) and the International AI Safety Report (Bengio et al., 2026), already cited in Section 12.6, motivate the disclosure and oversight side of this constraint. The Bartz v. Anthropic ruling (bar, 2025) adds an input-side constraint on training-data sourcing, distinct from the output-side copyright questions about AI-generated code that emerging cases address separately. An OECD report on AI governance frameworks (OECD, 2025) and an early analysis of compliance obligations for agent providers by Nannini et al. (2026) sketch what regulator-facing interfaces might look like without prescribing specifics.</p><p class="dst">新兴的人工智能监管为实现第 2.1 节中记录的人类、运营商和用户的权威层次结构的架构添加了外部约束。在外部约束下，coding agent架构应该公开哪些日志记录、透明度和人工监督功能仍然是一个悬而未决的设计问题。欧盟委员会的 GPAI 实践准则（欧盟委员会，2025a）和实施指南（欧盟委员会，2025b）说明了通用人工智能治理如何朝着对文档、风险管理、透明度和监督更明确的期望迈进。麻省理工学院人工智能代理指数（Staufer 等人，2026 年）和国际人工智能安全报告（Bengio 等人，2026 年）（已在第 12.6 节中引用）推动了这一限制的披露和监督。 Bartz v. Anthropic 裁决（bar，2025）增加了对训练数据来源的输入侧限制，这与新兴案件单独解决的有关人工智能生成代码的输出侧版权问题不同。经合组织关于人工智能治理框架的报告（经合组织，2025）以及 Nannini 等人对代理提供商合规义务的早期分析。 (2026) 勾勒出面向监管机构的接口可能是什么样子，但没有规定具体细节。</p></div>
+
+<div class="bilingual-pair"><p class="src">(Tier A) Regulation can also act on a model’s availability, not only on what an architecture must disclose.</p><p class="dst">（A 层）监管还可以对模型的可用性起作用，而不仅仅是架构必须披露的内容。</p></div>
+
+<div class="bilingual-pair"><p class="src">In June 2026 a US export-control order barred foreign nationals from Anthropic’s Fable 5 and Mythos 5 models, and within days of launch Anthropic disabled both models for all users worldwide (Anthropic, 2026e).</p><p class="dst">2026 年 6 月，美国出口管制令禁止外国人使用 Anthropic 的《神鬼寓言 5》和《神话 5》模型，并且在发布后几天内，Anthropic 就对全球所有用户禁用了这两种模型（Anthropic，2026e）。</p></div>
+
+<div class="bilingual-pair"><p class="src">Anthropic reported that the controls were lifted on June 30; Fable 5 returned for users globally on July 1, while Mythos 5 access was restored only for a set of US organizations (Anthropic, 2026f). Government policy of this kind can directly determine when, and to whom, such a model is available.</p><p class="dst">Anthropic 报道称，控制已于 6 月 30 日解除； 《神鬼寓言 5》于 7 月 1 日重新向全球用户开放，而《神话 5》仅针对一组美国组织恢复了访问权限（Anthropic，2026f）。此类政府政策可以直接决定何时以及向谁提供这种模式。</p></div>
+
+<div class="bilingual-pair"><p class="src">Agentic safety benchmarks also move the safety object from text to environment state. Boiling the Frog evaluates whether multi-turn workspace edits become unsafe under incremental attacks (Bisconti et al., 2026).</p><p class="dst">代理安全基准还将安全对象从文本状态转移到环境状态。煮青蛙评估多轮工作区编辑在增量攻击下是否变得不安全（Bisconti 等人，2026）。</p></div>
+
+<div class="bilingual-pair"><p class="src">This matters for coding agents because the risky object may be the modified repository, not the final answer text.</p><p class="dst">这对于coding agent很重要，因为有风险的对象可能是修改后的存储库，而不是最终的答案文本。</p></div>
+
+<div class="bilingual-pair"><p class="src">Read against the permission pipeline analyzed in Section 5, two properties of the current architecture are open under this constraint. First, the deny-first evaluation the paper documents is internally auditable through session transcripts (Section 9), and Claude Code can export tool permission decision events through OpenTelemetry (Anthropic, 2026j). How these records can support external audits under emerging frameworks such as the GPAI Code of Practice (European Commission, 2025a) remains an open question. Second, whether the values-over-rules principle, which the paper pairs with deterministic guardrails, admits the kind of explicit rule articulation that compliance review may call for is a further open question. Both properties lie within the harness rather than the model, which is where future architectures may need to expose new interfaces.</p><p class="dst">对照第 5 节中分析的权限管道，当前架构的两个属性在此约束下是开放的。首先，论文文档中的拒绝优先评估可通过会话记录进行内部审核（第 9 节），并且 Claude Code 可以通过 OpenTelemetry 导出工具权限决策事件（Anthropic，2026j）。这些记录如何支持 GPAI 实践守则（欧盟委员会，2025a）等新兴框架下的外部审计仍然是一个悬而未决的问题。其次，本文与确定性护栏相结合的价值高于规则的原则是否承认合规审查可能需要的那种明确的规则表述，这是一个进一步悬而未决的问题。这两个属性都位于harness内，而不是模型内，这是未来架构可能需要公开新接口的地方。</p></div>
+
+<div class="bilingual-pair"><p class="src">13.6</p><p class="dst">13.6</p></div>
+
+<div class="bilingual-pair"><p class="src">Long-term Developer Capability</p><p class="dst">长期开发能力</p></div>
+
+<div class="bilingual-pair"><p class="src">Section 2.4 introduces long-term developer capability as a cross-cutting question rather than a co-equal design value. Sections 12.2 and 12.4 extend the question with external evidence, including perceived-versus- measured productivity, comprehension loss, complexity accrual, technical-debt persistence, neural-connectivity persistence, and early-career hiring decline. Practitioners say the same: reflecting on his own move to agent-driven coding, Karpathy (2026) warns that “you can outsource your thinking, but you can’t outsource your understanding.” Section 14 then pivots: “Future systems could treat that sustainability gap as a first-class design problem, not a downstream evaluation metric.” Whether that pivot is possible, and what architectural mechanisms a first-class treatment would require, is the last of the open questions this section records.</p><p class="dst">2.4 节介绍了长期开发人员能力作为一个横切问题，而不是一个同等的设计价值。第 12.2 和 12.4 节用外部证据扩展了这个问题，包括感知与测量的生产力、理解损失、复杂性应计、技术债务持续性、神经连接持续性和早期职业招聘下降。从业者也这么说：在反思自己转向代理驱动编码时，Karpathy（2026）警告说，“你可以外包你的思维，但你不能外包你的理解。”第 14 节接着​​提出：“未来的系统可以将可持续性差距视为一流的设计问题，而不是下游评估指标。”这个支点是否可能，以及一流的处理需要什么架构机制，是本节记录的最后一个开放问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">This also links to process supervision. Human-LLM collaborative planning work argues that users need process-level control, not only outcome-level review, and organizes steering by mode, scope, and edit level (He et al., 2026). For coding agents, the analogous question is what a user can inspect and change while the work is still unfolding.</p><p class="dst">这也与过程监督有关。人类-法学硕士协作规划工作认为，用户需要过程级控制，而不仅仅是结果级审查，并按模式、范围和编辑级别组织指导（He et al., 2026）。对于coding agent来说，类似的问题是用户在工作仍在进行时可以检查和更改什么。</p></div>
+
+<div class="bilingual-pair"><p class="src">Two sub-questions separate the measurement gap from the design gap. First, whether the empirical claims that motivate the question are measurable at session granularity. The existing citations operate at session to multi-month scales (Becker et al. (2025)’s 16-developer RCT, Shen and Tamkin (2026)’s comprehension-test comparison, Kosmyna et al. (2025)’s EEG study, He et al. (2025)’s 807-repository causal analysis, Liu et al.</p><p class="dst">两个子问题将测量差距与设计差距分开。首先，引发该问题的经验主张是否可以在会话粒度上进行衡量。现有的引文在会话至数月的范围内进行（Becker 等人（2025）的 16 个开发者随机对照试验、Shen 和 Tamkin（2026）的理解测试比较、Kosmyna 等人（2025）的脑电图研究、He 等人（2025）的 807 存储库因果分析、Liu 等人（2025）的 807 存储库因果分析。</p></div>
+
+<div class="bilingual-pair"><p class="src">(2026)’s 304,000-commit audit, Rak (2025)’s hiring series), but the harness documented in Sections 3, 4 42 and 7 exposes no per-session signal for comprehension or convention drift. Related work on programmer interaction modes (Barke et al., 2023) and AI-induced code-security regressions (Perry et al., 2023) sketches session-granularity measurement, and Aiersilan (2026) proposes a protocol for session-level cognitive-offloading probes. Second, whether architecture can respond to such measurements once they exist (an analogue of the generator-evaluator separation (Rajasekaran, 2026) applied to the human loop, comprehension-preserving surfaces, or mechanisms not yet named) is the design-gap question Section 14 poses. The paper takes no position on which mechanism class is appropriate. It also does not settle whether the harness documented here is the right locus for that action, rather than the IDE, the organisation, or the human development loop.</p><p class="dst">(2026) 的 304,000 次提交审计、Rak (2025) 的招聘系列)，但第 3、4、42 和 7 节中记录的harness没有暴露每个会话的理解或约定漂移信号。关于程序员交互模式（Barke et al., 2023）和人工智能引发的代码安全回归（Perry et al., 2023）的相关工作概述了会话粒度测量，而 Aiersilan（2026）提出了一种用于会话级认知卸载探测的协议。其次，一旦这些测量存在，架构是否能够对其做出响应（类似于生成器-评估器分离（Rajasekaran，2026）应用于人类循环、理解保留表面或尚未命名的机制）是第 14 节提出的设计差距问题。本文对于哪种机制类别合适没有采取任何立场。它还不能解决此处记录的harness（而不是 IDE、组织或人类开发循环）是否是该操作的正确位置。</p></div>
+
+<div class="bilingual-pair"><p class="src">The related work surveyed in Section 11 and the sustainability pivot of Section 14 mark where this paper leaves the question.</p><p class="dst">第 11 节中调查的相关工作和第 14 节中的可持续发展支点标志着本文留下的问题。</p></div>
+
+<div class="bilingual-pair"><p class="src">14</p><p class="dst">14</p></div>
+
+<div class="bilingual-pair"><p class="src">Conclusion</p><p class="dst">结论</p></div>
+
+<div class="bilingual-pair"><p class="src">This paper shows that production coding agents can be understood as answers to a recurring set of design questions: where reasoning sits relative to the harness, how execution, safety, extensibility, context, delegation, and persistence are organized, and which trade-offs those choices encode. Claude Code occupies a clear design point within that space. It gives the model broad local autonomy while surrounding it with a dense deterministic harness for permissioning, tool routing, context compaction, extensibility, and session recovery.</p><p class="dst">本文表明，生产coding agent可以被理解为一组重复出现的设计问题的答案：推理相对于harness的位置，如何组织执行、安全性、可扩展性、上下文、委托和持久性，以及这些选择编码的权衡。Claude·科德（Claude Code）在该空间中占据了清晰的设计点。它为模型提供了广泛的本地自治权，同时围绕它提供了用于许可、工具路由、上下文压缩、可扩展性和会话恢复的密集确定性harness。</p></div>
+
+<div class="bilingual-pair"><p class="src">Read through the five values and thirteen design principles identified in Section 2, these choices are coherent rather than ad hoc: the system consistently prioritizes human decision authority, safety, reliable execution, capability amplification, and contextual adaptability.</p><p class="dst">仔细阅读第 2 节中确定的五个价值观和十三个设计原则，这些选择是连贯的而不是临时的：系统始终优先考虑人类决策权、安全性、可靠的执行、能力放大和上下文适应性。</p></div>
+
+<div class="bilingual-pair"><p class="src">The OpenClaw and Hermes Agent comparisons show that the same design questions recur in different agent systems but produce different answers. Where Claude Code invests in per-action safety classification and graduated context compression within a CLI harness, OpenClaw invests in perimeter-level access control and structured long-term memory within a multi-channel gateway, and Hermes Agent renders per-action approvals across many surfaces, from one process, with pluggable memory and model backends. The three systems compose through ACP at multiple positions: OpenClaw can host Claude Code as an external harness via ACP, and Hermes Agent sits on both sides of the host/guest split. For agent builders, the most consequential open question is therefore not how to add more autonomy, but how to preserve human capability over time.</p><p class="dst">OpenClaw 和 Hermes Agent 的比较表明，相同的设计问题在不同的代理系统中重复出现，但产生不同的答案。 Claude Code 投资于 CLI harness内的每操作安全分类和分级上下文压缩，OpenClaw 投资于多通道网关内的外围级别访问控制和结构化长期内存，而 Hermes Agent 通过可插拔内存和模型后端从一个进程跨多个表面呈现每操作批准。这三个系统通过 ACP 在多个位置组成：OpenClaw 可以通过 ACP 托管 Claude Code 作为外部harness，而 Hermes Agent 则位于主机/客户分割的两侧。因此，对于代理构建者来说，最重要的开放问题不是如何增加更多自主权，而是如何随着时间的推移保持人类能力。</p></div>
+
+<div class="bilingual-pair"><p class="src">Taken together, the long-term capability question introduced in Section 2.4, the analysis in Section 12, and the open questions surveyed in Section 13 show that the architecture provides limited mechanisms that explicitly preserve long-term human understanding, codebase coherence, or the developer pipeline. Future systems could treat that sustainability gap as a first-class design problem, not a downstream evaluation metric.</p><p class="dst">总而言之，第 2.4 节中介绍的长期能力问题、第 12 节中的分析以及第 13 节中调查的开放式问题表明，该架构提供了有限的机制，可以明确保留长期的人类理解、代码库一致性或开发人员管道。未来的系统可以将可持续性差距视为一流的设计问题，而不是下游评估指标。</p></div>
+
+
+
+
+
+
+
+</details>
+
+## 学习者视角
+
+### 关键收获
+
+1. **Agent 工程 = harness 工程。** 模型提供推理，harness 提供权限、上下文、工具、记忆和恢复。真正可复用的能力在后者。
+2. **安全设计要从“审批”转向“边界”。** 用户会习惯性批准，所以沙箱、分类器、deny-first 规则比无限弹窗更可靠。
+3. **上下文管理是系统能力，不是 prompt 技巧。** 压缩、裁剪、折叠、摘要要组合使用。
+4. **Subagent 的第一价值是隔离。** 不是“多线程”，而是“把噪声挡在主上下文之外”。
+5. **长期能力是设计问题。** 如果课程只教你让 agent 更快，不教你如何保持理解，那只是短期提效。
+
+### 放回课程里看
+
+这篇论文是 Week 1 的“总架构图”。读完它，你再看后面的 Context Engineering、Skills、MCP、Code Review，都会更容易定位：每个主题对应 harness 的哪一个子系统。
+
+### 一个反直觉点
+
+论文发现 Claude Code 的核心 loop 非常简单，大部分代码都在“围绕 loop 的系统”里。这解释了一个常见误区：** demo 只需要 loop，产品需要 harness。**
+
+## 拓展
+
+### 思考题
+
+1. 如果让你给一个“数据分析 agent”设计权限系统，你会沿用 Claude Code 的 7 种模式，还是重新设计？为什么？
+2. 五层压缩管线里，哪一层最可能造成“静默错误”？你会如何观测？
+3. Subagent 的“只返回最终消息”策略，什么时候会成为瓶颈？
+4. 论文提出的“长期开发者能力”问题，在你自己的学习或工作中有什么具体表现？
+
+### 练习
+
+画一张你自己项目的 agent harness 图，标注：
+
+- 核心 loop；
+- 工具；
+- 权限/安全边界；
+- 上下文来源；
+- 压缩策略；
+- 持久化；
+- 人类监督点。
+
+然后圈出你最薄弱的一层，写一句可执行的改进。
+
+### 接着读
+
+- [Lessons from Building Claude Code：工具设计的第一手经验](w1-lessons-from-building-claude-code.html)
+- [The Context Tax：什么时候该压缩上下文](w2-the-context-tax-when-to-compact.html)
+- [Steering Claude Code：七种指令机制怎么选](w4-steering-claude-code.html)

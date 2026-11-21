@@ -1,0 +1,240 @@
+---
+title: "WarpBench：用内部 benchmark 把每个 PR 的成本从 80 美元降到 30 美元"
+original: "Using Benchmarks, we reduced Warp’s internal factory cost per PR from $80 to $30"
+week: "9"
+slug: "w9-warpbench"
+source_url: "https://warp.dev/factories/benchmarks/warpbench"
+author: "Zach Lloyd / Warp"
+date: "2026-09-02"
+kind: "工程博客"
+coverage: "全文精译"
+minutes: "10"
+blurb: "用 30 个真实历史任务、5 个模型和 LLM-as-a-judge，把软件工厂的默认模型选择从直觉变成可复现的 benchmark。"
+---
+
+## 总结
+
+Warp 没有用公开 benchmark 来选模型，而是用自己过去真实的 agent 运行记录，建了一个内部 benchmark：**WarpBench**。
+
+- 任务集来自 30 个历史任务，覆盖 S / M / L / XL 规模和 server / client 两个代码库。
+- 测试了 Opus 5、GPT-5 Sol、Gemini 3.7、Grok 4.6、GLM 5.3 flash 等模型。
+- 用 git 复原任务当时的代码和 factory 配置，保证不同模型在相同环境下比较。
+- 用内置 scorer（LLM-as-a-judge）按成本、质量、啰嗦程度等维度评分。
+- 第一轮把默认实现模型切到 Grok 4.6（high），每个完成 PR 的成本从约 80 美元降到 30 美元，任务合规分从 69% 提升到 87%。
+- 更全面的评测显示 GPT 5.6 Sol 的成本/质量更好，预计还能再降约 25%。
+- 关键结论：内部 benchmark 比公开 benchmark 更贴近真实工作流，也更能指导模型路由。
+
+## 原文逐段对照翻译
+
+> **翻译说明：**以下按原文顺序翻译全部章节；原文的 6 张图表已下载到本地，并按原文位置插入。页面顶部的产品导航和页脚从略。
+
+### 引言
+
+<div class="bilingual-pair">
+<p class="src">Using Benchmarks, we reduced Warp’s internal factory cost per PR from $80 to $30.</p>
+<p class="dst">通过 Benchmarking，我们把 Warp 内部 factory 每个 PR 的成本从 80 美元降到了 30 美元。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">With Warp Factories Benchmarking it’s now possible to build custom coding agent benchmarks on your team’s real data and workflows with a few clicks.</p>
+<p class="dst">有了 Warp Factories Benchmarking，现在只需点几下，就能基于团队真实的数据和工作流构建自定义 coding agent benchmark。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The advantage of internal benchmarking is grading agent performance on your real workflows, not on the typical random set of tasks that comprise public benchmarks like SWEBench and Terminal Bench. In addition, public benchmarks tend to be saturated and unreliable because their task sets have leaked into the training data of most models.</p>
+<p class="dst">内部 benchmark 的优势在于：它按你的真实工作流给 agent 打分，而不是按 SWEBench、Terminal Bench 这类公开 benchmark 的随机任务集。此外，公开 benchmark 往往已经饱和且不可靠，因为它们的任务集已经泄漏进了大多数模型的训练数据。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Warp Factories makes it easy to set up these benchmarks based on actual past agent runs; it has all the infra for curating task sets, replaying them, varying model and harness mix, presenting results and feeding those back into the factory as custom model routers.</p>
+<p class="dst">Warp Factories 让基于真实历史 agent 运行来搭建 benchmark 变得很容易：它提供了整理任务集、回放任务、改变模型和 harness 组合、展示结果，以及把结果作为 custom model router 反馈回 factory 的全部基础设施。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Below is a deep dive on how we used this infrastructure to create an internal benchmark we call WarpBench that we used to set our default model mix and lower our internal cost per PR from $80 to $30.</p>
+<p class="dst">下面详细讲我们如何用这套基础设施创建内部 benchmark WarpBench，并用它确定默认模型组合，把内部每个 PR 的成本从 80 美元降到 30 美元。</p>
+</div>
+
+### 设置
+
+<div class="bilingual-pair">
+<p class="src">In order to optimize the default implementation model we use in our factory, we created an internal benchmark called WarpBench. To build the task set, we asked our foreman agent to search over our corpus of past agent runs looking for a representative set of 30 tasks at different levels of scope; roughly S, M, L, XL. The tasks span both our server codebase (golang, react) and our client (rust), and represent a range of coding tasks - from UI changes to database updates, server business logic, and systems programming tasks.</p>
+<p class="dst">为了优化 factory 里的默认 implementation 模型，我们创建了内部 benchmark WarpBench。构建任务集时，我们让 foreman agent 在过去的 agent 运行语料里搜索，找出一组有代表性的 30 个任务，规模大致覆盖 S、M、L、XL。任务横跨 server 代码库（Golang、React）和 client 代码库（Rust），覆盖从 UI 改动、数据库更新、server 业务逻辑到系统编程的多种类型。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Once the task set was curated, we picked a set of models to test, with a mix of lab and open-weight (Opus 5, GPT-5 Sol, Gemini 3.7, and Grok 4.6, GLM 5.3 flash). We used Warp Agent as the harness, although in future iterations we plan on also testing Claude Code and Codex directly, since our infra supports other agents.</p>
+<p class="dst">任务集整理好后，我们选了一组模型来测试，混合了闭源实验室模型和开放权重模型：Opus 5、GPT-5 Sol、Gemini 3.7、Grok 4.6、GLM 5.3 flash。Harness 使用 Warp Agent；后续迭代还计划直接测试 Claude Code 和 Codex，因为我们的基础设施支持其他 agent。</p>
+</div>
+
+<figure class="article-figure">
+<a href="assets/figures/w9-warpbench/model-selection.png" target="_blank" rel="noopener noreferrer"><img src="assets/figures/w9-warpbench/model-selection.png" alt="The benchmark's model configurations"></a>
+<figcaption>原文图：benchmark 的模型配置。Warp 使用 grok 4.6（medium）和 glm 5.3 flash，Claude Code 使用 opus，Codex 使用 gpt-5.6-sol（low），每个配置都运行 implementation agent。</figcaption>
+</figure>
+
+<div class="bilingual-pair">
+<p class="src">It took less than 30 minutes of setup work to create the benchmark using the built-in primitives in Warp Factories. The same method works out of the box for any factory on our platform.</p>
+<p class="dst">使用 Warp Factories 的内置原语，创建这个 benchmark 只花了不到 30 分钟的配置工作。同样的方法对我们平台上的任何 factory 都开箱即用。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The actual benchmarks run by recreating the state of the curated tasks and re-launching them in sandboxes with the original environment. We achieve this by using git to rehydrate not just the original code, but also fix the factory configuration at a point in time. Since our factories are defined as code, this ensures that agent definitions, skills, etc. are all constant across tests. We then use our built-in scorers (LLM-as-a-judge) to score the runs along different dimensions like cost, quality, verbosity and custom dimensions.</p>
+<p class="dst">真正的 benchmark 会重建任务当时的状态，并在带有原始环境的 sandbox 里重新启动任务。我们不仅用 git 恢复原始代码，还把 factory 配置固定到某个时间点。因为 factory 是定义为代码的，这样能保证 agent 定义、skills 等在测试之间保持不变。然后用内置 scorers（LLM-as-a-judge）按成本、质量、啰嗦程度和自定义维度给运行打分。</p>
+</div>
+
+<figure class="article-figure">
+<a href="assets/figures/w9-warpbench/measurement.png" target="_blank" rel="noopener noreferrer"><img src="assets/figures/w9-warpbench/measurement.png" alt="A correctness grid scoring each task"></a>
+<figcaption>原文图：正确性评分表。每个任务分别对 grok 4.6（high）、claude opus 5（high）和 glm 5.3 flash 打分，图中包含一个 0.50 的部分得分，以及一个尚未评分的任务。</figcaption>
+</figure>
+
+<div class="bilingual-pair">
+<p class="src">Without these primitives it would have taken months of engineering work to gather the traces, build the replay and LLM-as-a-judge functionality, build the data analysis, generate the pareto charts, etc. We know from experience testing our harness on public benchmarks like Terminal-Bench (previously #1) and SWE-bench (#3) how much work this is, but also how valuable benchmarking is for improving harness performance.</p>
+<p class="dst">没有这些原语，光是收集 trace、构建回放和 LLM-as-a-judge、做数据分析、生成 pareto 图，就要花几个月的工程时间。我们之前在 Terminal-Bench（曾排名第一）和 SWE-bench（曾排名第三）上测试 harness 的经验，既说明了这项工作有多重，也说明了 benchmark 对提升 harness 性能有多值。</p>
+</div>
+
+### 结果
+
+<div class="bilingual-pair">
+<p class="src">The benchmarks took 3h 46m to run and cost $2,130.57. We don’t recommend running benchmarks often because of the cost, but rather running them when new models come out or when you make significant changes to other inputs like your code, skills, MCPs, etc. You also can make very targeted benchmark sets for specific types of tasks, which tend to cost less. I’ll cover how we do this in another article.</p>
+<p class="dst">这轮 benchmark 运行了 3 小时 46 分钟，花费 2,130.57 美元。因为成本高，我们不建议频繁运行 benchmark；更适合在新模型发布，或代码、skills、MCP 等输入发生重大变化时运行。也可以针对特定任务类型做非常小的 benchmark 集，成本通常更低。具体做法我会在另一篇文章里讲。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">We’ve iterated on the benchmarks over the last two weeks, and applied the results to save a bunch of money so far.</p>
+<p class="dst">过去两周我们一直在迭代 benchmark，并把结果应用起来，已经省下了不少钱。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Our first iteration was on a set of targeted simple UI and backend tasks - these showed that Grok 4.6 (high) was the best model (at the same quality, but half the cost) so about a week ago we made that the primary implementation agent (note that developers can deviate from this if they want). Prior to Grok 4.6 (high) we were using Warp’s “auto (genius)” routed model, which for complex tasks routes most frequently to Opus 5. The result was a drop from about $80 to $30 per completed PR, with no measured or anecdotal drop in agent quality.</p>
+<p class="dst">第一轮测试的是一组有针对性的简单 UI 和后端任务：结果显示 Grok 4.6（high）最好——质量相同，成本只有一半。所以大约一周前，我们把它设为主要的 implementation agent（开发者如果想，也可以偏离这个默认值）。在 Grok 4.6（high）之前，我们用的是 Warp 的 “auto (genius)” 路由模型，复杂任务最常路由到 Opus 5。切换后，每个完成 PR 的成本从约 80 美元降到 30 美元，无论从指标还是轶事反馈看，agent 质量都没有下降。</p>
+</div>
+
+<figure class="article-figure">
+<a href="assets/figures/w9-warpbench/results.png" target="_blank" rel="noopener noreferrer"><img src="assets/figures/w9-warpbench/results.png" alt="Median cost per PR before and after the change"></a>
+<figcaption>原文图：改动前后的 PR 成本中位数。8 月 26 日为 81.13 美元，8 月 30 日为 19.06 美元，图中拆分为 compute、platform 和 inference。</figcaption>
+</figure>
+
+<div class="bilingual-pair">
+<p class="src">As a quality check, we looked not only at merge rate (which stayed constant), but also at our internal scorer agents that rate agent runs using LLM-as-a-judge on quality and correctness, amongst other dimensions. Our task compliance scores went up after the change, from 69% to 87%.</p>
+<p class="dst">为了检查质量，我们不只看 merge rate（保持不变），还看了内部 scorer agents：它们用 LLM-as-a-judge 从质量、正确性等维度给 agent 运行打分。切换之后，我们的 task compliance 分数从 69% 上升到 87%。</p>
+</div>
+
+<figure class="article-figure">
+<a href="assets/figures/w9-warpbench/compliance.png" target="_blank" rel="noopener noreferrer"><img src="assets/figures/w9-warpbench/compliance.png" alt="Task compliance over time"></a>
+<figcaption>原文图：task compliance 随时间的变化。模型切换前，8 月 23 日为 69%；之后整体上升到 87%。</figcaption>
+</figure>
+
+<div class="bilingual-pair">
+<p class="src">We expanded the benchmarks earlier this week, and now believe that GPT 5.6 Sol is even better from a cost/quality tradeoff. Here’s the pareto graph from the more comprehensive benchmark run:</p>
+<p class="dst">本周早些时候我们扩展了 benchmark，现在认为 GPT 5.6 Sol 在成本/质量权衡上更好。下面是更全面的一轮 benchmark 的 pareto 图：</p>
+</div>
+
+<figure class="article-figure">
+<a href="assets/figures/w9-warpbench/graph.png" target="_blank" rel="noopener noreferrer"><img src="assets/figures/w9-warpbench/graph.png" alt="A pareto graph of correctness against average cost"></a>
+<figcaption>原文图：更全面 benchmark 中，各配置的 correctness 对 average cost 的 pareto 图。gpt-5.6-sol（high）平均成本 6.13 美元、correctness 95%，被标为 benchmark winner。</figcaption>
+</figure>
+
+<div class="bilingual-pair">
+<p class="src">We just made this the default implementation agent yesterday and are letting the results bake, but we expect about another 25% improvement (there’s some variance here).</p>
+<p class="dst">我们昨天刚把它设为默认 implementation agent，正在让结果沉淀；预计还能再改善约 25%（这里有一定波动）。</p>
+</div>
+
+### 走向更专门的 benchmark
+
+<div class="bilingual-pair">
+<p class="src">The next steps are to try to refine these benchmarks into different task sets that we can effectively model-route on. It’s relatively simple to come up with a good default model by doing a wide benchmark across various tasks (and we might have guessed that Grok 4.6 and Sol would be more cost-effective than Opus 5).</p>
+<p class="dst">下一步是把这些 benchmark 细分成不同的任务集，以便有效地做 model routing。通过覆盖多种任务的宽泛 benchmark 找出一个好的默认模型相对简单（而且我们本来也可能猜到 Grok 4.6 和 Sol 比 Opus 5 更具成本效益）。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Next we will try to slice tasks and see if there are model-routing rules that we can confidently deploy to get even more benefit, e.g. slicing by language, or task complexity, or client/server, etc.</p>
+<p class="dst">接下来我们会尝试切分任务，看是否存在可以放心部署的 model-routing 规则，从而获得更大收益。例如按语言、任务复杂度、client/server 等维度切分。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The idea is to build up more task sets, measure what model is best, and then use Warp’s custom router feature to route work accordingly.</p>
+<p class="dst">思路是积累更多任务集，测量哪个模型最好，然后用 Warp 的 custom router 功能把工作路由到对应模型。</p>
+</div>
+
+<figure class="article-figure">
+<a href="assets/figures/w9-warpbench/model-router.png" target="_blank" rel="noopener noreferrer"><img src="assets/figures/w9-warpbench/model-router.png" alt="A custom model router configuration"></a>
+<figcaption>原文图：一个名为 “Monorepo tasks” 的 custom model router 配置，把涉及 Web UI 和 Golang server API 的混合全栈 warp-server 任务路由到 gpt-5-6-sol-high。</figcaption>
+</figure>
+
+### 后续步骤
+
+<div class="bilingual-pair">
+<p class="src">We are exploring a couple of directions, namely benchmarking across harnesses and A/B testing different configs.</p>
+<p class="dst">我们正在探索两个方向：跨 harness 的 benchmark，以及对不同配置做 A/B 测试。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Cross-harness benchmarking (e.g. comparing Warp Agent vs. Claude Code vs. Codex) is particularly interesting and not yet fully supported on our platform, but coming soon. I’m eager to see how the different harnesses fare on the same tasks.</p>
+<p class="dst">跨 harness benchmark（比如比较 Warp Agent、Claude Code、Codex）尤其有意思；我们的平台还没有完全支持，但很快会推出。我很想知道不同 harness 在相同任务上的表现。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">A second improvement we are exploring is A/B testing. Right now, our benchmarks only support retroactive measurements of quality. When you make changes based on them, you are assuming future tasks will be similar to past ones. You can gain confidence by actually A/B testing model routing rules, making sure the benchmarking results hold.</p>
+<p class="dst">第二个改进方向是 A/B 测试。目前我们的 benchmark 只支持对质量做事后测量。基于 benchmark 做改动时，你实际上假设了未来任务和过去相似。要获得更强信心，可以真正对 model routing 规则做 A/B 测试，确认 benchmark 结果仍然成立。</p>
+</div>
+
+### 申请访问
+
+<div class="bilingual-pair">
+<p class="src">Request access. Build and run benchmarks on your own code with Warp Factories.</p>
+<p class="dst">申请访问权限。用 Warp Factories 在你自己的代码上构建和运行 benchmark。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Request access to Warp Factories with your work email.</p>
+<p class="dst">用工作邮箱申请 Warp Factories 访问权限。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Set up your own Benchmark with Warp Factories.</p>
+<p class="dst">用 Warp Factories 搭建你自己的 Benchmark。</p>
+</div>
+
+## 学习者视角
+
+### 关键收获
+
+1. **内部 benchmark 比公开 benchmark 更贴近真实工作。** 任务来自自己的历史运行，覆盖自己的代码库和失败模式。
+2. **可复现性来自“配置即代码”。** 用 git 恢复代码和 factory 配置，才能保证不同模型在同一条件下比较。
+3. **模型选择是成本/质量权衡，不是越强越好。** Grok 4.6（high）在相同质量下成本减半；GPT 5.6 Sol 进一步改善 pareto 前沿。
+4. **LLM-as-a-judge 要和其他指标一起看。** merge rate、task compliance、成本、质量、啰嗦程度共同构成判断。
+5. **Benchmark 的下一步是 model routing。** 不只选一个默认模型，而是按任务类型把工作路由给最合适的模型。
+
+### 放回课程里看
+
+这篇是 Week 9 的“评估与优化”视角：它把 software factory 从“能跑”推进到“可测量、可优化”。和 [Warp Factory 示例](w9-warp-factory-issue-to-pr.html) 对比，示例讲工厂怎么搭，WarpBench 讲怎么用数据调工厂的默认模型和 router。
+
+### 一个反直觉点
+
+很多人会直接用公开 benchmark 排行榜选模型。Warp 的结论是：**公开 benchmark 可能已经饱和、泄漏，且和你的真实任务分布不一致；真正有用的 benchmark 应该由你自己的历史运行构成。**
+
+## 拓展
+
+### 思考题
+
+1. 如果你的团队只有几十个历史任务，如何构建一个有代表性的内部 benchmark？
+2. 为什么“用 git 固定 factory 配置”对可复现性这么重要？
+3. LLM-as-a-judge 在哪些维度上可靠，哪些维度上不可靠？
+4. 什么情况下值得按语言、复杂度或 client/server 做 model routing？
+
+### 练习
+
+为你的项目设计一个最小内部 benchmark：
+
+- 从历史任务中选 10–30 个，覆盖不同规模和类型；
+- 固定每个任务的代码状态和 agent 配置；
+- 选 3 个模型/配置；
+- 定义 3 个评分维度（例如 correctness、成本、耗时）；
+- 用 LLM-as-a-judge + 人工抽查各评一部分；
+- 写出“什么情况下应该重新跑 benchmark”的规则。
+
+### 接着读
+
+- [Warp Factory 示例：从 Issue 到 PR](w9-warp-factory-issue-to-pr.html)
+- [Software Factory：10 天软件工厂实验](w9-software-factory.html)
+- [OpenInspect：开源的后台 agent 框架](w9-openinspect-background-agents.html)

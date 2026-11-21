@@ -1,0 +1,427 @@
+[
+  {
+    "title": "Week 1: The Internals of Coding Agents",
+    "topics": [
+      "What an LLM actually is, and what the agent loop looks like under the hood",
+      "The core tool set (read, write, edit, bash) and how tasks flow through it",
+      "How production coding agents structure their system prompts and tool definitions"
+    ],
+    "reading": [
+      {
+        "label": "Building a Coding Agent",
+        "href": "https://youtube.com/watch?v=s7ZzkdvCMDY"
+      },
+      {
+        "label": "Lessons from Building Claude Code",
+        "href": "https://x.com/trq212/status/2027463795355095314?s=20"
+      },
+      {
+        "label": "Dive into Claude Code",
+        "href": "https://arxiv.org/pdf/2604.14228"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 9/22:",
+        "lead": "Course intro + build Claude Code in 200 lines",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1uztIhjHAG6O_9QOD1N_3wdhwhABml1fANXEN2dGwdbg/edit?usp=drive_link",
+            "gated": true
+          },
+          {
+            "label": "Completed code",
+            "href": "https://drive.google.com/file/d/1DxKa_autBOu9s8DvItodgUAwH_pBg7aR/view?usp=drive_link"
+          }
+        ]
+      },
+      {
+        "date": "Thu 9/24:",
+        "lead": "How state-of-the-art coding agents are designed: deep dive into the system prompts that define the agent",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1RZu-p18Qybbgm8WVP2RH04ESc4Bn377B-T9j5-TBFdQ/edit?usp=drive_link",
+            "gated": true
+          },
+          {
+            "label": "Prompts",
+            "href": "https://drive.google.com/drive/folders/1c6_atVW0RrqEBWsNIscG2KNwCiuPxWQG?usp=drive_link"
+          },
+          {
+            "label": "Transcript",
+            "href": "/materials/9-24-26-transcript.txt"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Week 2: Advanced Context Engineering",
+    "topics": [
+      "Advanced prompting techniques and when each applies",
+      "RePPIT (Research, Propose, Plan, Implement, Test) and spec-driven development",
+      "MCP fundamentals: servers, clients, tools, and transport",
+      "Designing tools for agent ergonomics"
+    ],
+    "reading": [
+      {
+        "label": "The Context Tax: When to Compact",
+        "href": "https://langwatch.ai/blog/context-tax-when-to-compact"
+      },
+      {
+        "label": "OpenSpec",
+        "href": "https://openspec.dev"
+      },
+      {
+        "label": "Superpowers",
+        "href": "https://github.com/obra/superpowers"
+      },
+      {
+        "label": "Enterprise MCP (Cloudflare)",
+        "href": "https://blog.cloudflare.com/enterprise-mcp"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 9/29:",
+        "lead": "Advanced prompting + agentic dev frameworks (RePPIT, spec-driven development)",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/17brqoQQZHF3K82WgYaV6urAV3Q7iIwyGUBYRvSuY8QY/edit?usp=sharing",
+            "gated": true
+          },
+          {
+            "label": "Transcript",
+            "href": "/materials/9-29-26-transcript.txt"
+          }
+        ]
+      },
+      {
+        "date": "Thu 10/1:",
+        "lead": "Full introduction to MCP and tool-calling (theory, setup, and advanced tool design)",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1q2cB1a7P4XsR0UJqE0RmtZFeggNOLdPaSnOpbBVewHA/edit?usp=sharing",
+            "gated": true
+          },
+          {
+            "label": "Skills",
+            "href": "https://drive.google.com/drive/folders/1aEHCXzZKkokuA4AYjD_2i6OrcM5iQosW?usp=drive_link"
+          },
+          {
+            "label": "Transcript",
+            "href": "/materials/10-1-26-transcript.txt"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Week 3: Agent Skills and CLI",
+    "topics": [
+      "What skills are and how SKILL.md + scripts encode a workflow",
+      "Web skills and extending agent capability beyond the repo",
+      "Working effectively from the CLI"
+    ],
+    "reading": [
+      {
+        "label": "pstack",
+        "href": "https://github.com/cursor/plugins/tree/main/pstack"
+      },
+      {
+        "label": "Matt Pocock's Skills",
+        "href": "https://github.com/mattpocock/skills"
+      },
+      {
+        "label": "browse.sh",
+        "href": "https://browse.sh"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 10/6:",
+        "lead": "All about agent skills (including web skills)",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/15bPu5c-i8D8McTh6l7SpUPk2n9M_Y-CdDQLfyzL8RD8/edit?usp=sharing",
+            "gated": true
+          }
+        ]
+      },
+      {
+        "date": "Thu 10/8:",
+        "lead": "Guest: Lee Robinson (Model Behavior @ SpaceX)",
+        "profile": "https://leerob.com",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://drive.google.com/file/d/1b8WiBk_lcB3ue-jZMLijSUMLj6SDiF6Z/view?usp=drive_link",
+            "gated": true
+          },
+          {
+            "label": "Video",
+            "href": "https://www.youtube.com/watch?v=L1OBRtfPS34"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Week 4: Customizing Your Agent and Repository",
+    "topics": [
+      "CLAUDE.md and AGENTS.md: what to put where",
+      "Hooks for lint gates, test runs, and guardrails",
+      "Subagent patterns (planner / implementer / reviewer)"
+    ],
+    "reading": [
+      {
+        "label": "I Still Prefer MCP Over Skills",
+        "href": "https://david.coffee/i-still-prefer-mcp-over-skills"
+      },
+      {
+        "label": "AGENTS.md (Factory Docs)",
+        "href": "https://docs.factory.com/harness/agents-md"
+      },
+      {
+        "label": "Steering Claude Code: Skills, Hooks, Rules, Subagents, and More",
+        "href": "https://claude.com/resources/articles/steering-claude-code-skills-hooks-rules-subagents-and-more"
+      },
+      {
+        "label": "Writing a Good CLAUDE.md",
+        "href": "https://hlyr.dev/blog/writing-a-good-claude-md"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 10/13:",
+        "lead": "Customizing your agentic setup (CLAUDE.md, AGENTS.md, hooks)",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/152VaUifBKH4T6hxd6fCKKM9kJTSAuBmkF8zSYwuTYAo/edit?usp=sharing",
+            "gated": true
+          }
+        ]
+      },
+      {
+        "date": "Thu 10/15:",
+        "lead": "Guest: Boris Cherny (Creator of Claude Code @ Anthropic)",
+        "profile": "https://borischerny.com"
+      }
+    ]
+  },
+  {
+    "title": "Week 5: Agent-Ready Codebases",
+    "topics": [
+      "What makes a repo agent-ready: structure, docs, tests, and checks",
+      "Scoring and auditing readiness",
+      "Common gaps that block agents in real repos"
+    ],
+    "reading": [
+      {
+        "label": "Making Codebases Agent Ready",
+        "href": "https://www.youtube.com/watch?v=ShuJ_CN6zr4"
+      },
+      {
+        "label": "Making Ergonomic Repositories",
+        "href": "https://x.com/trybasis/status/2056881705269580023"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 10/20:",
+        "lead": "Agent readiness in your repos (structure, docs, and checks that make repos agent-friendly)",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1yCxocmUrGIN7IrC42WB6NW08PtYYFLe1ombDj3Ay6_8/edit?usp=drive_link",
+            "gated": true
+          }
+        ]
+      },
+      {
+        "date": "Thu 10/22:",
+        "lead": "Guest: Eno Reyes (CTO @ Factory)",
+        "profile": "https://www.linkedin.com/in/enoreyes",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://drive.google.com/file/d/1Nbi1QEdiLXFBFAu1lRKkTkd85QRGpWOx/view?usp=drive_link",
+            "gated": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Week 6: Agentic Code Review",
+    "topics": [
+      "What AI review catches well, and what it misses",
+      "Review architectures and custom rules",
+      "Fitting AI review into a team's PR workflow"
+    ],
+    "reading": [
+      {
+        "label": "Layered Code Review and Risk-Based Human Oversight",
+        "href": "https://x.com/addyosmani/status/2114604912520921136"
+      },
+      {
+        "label": "Coordinating Specialist Review Agents at Scale",
+        "href": "https://blog.cloudflare.com/ai-code-review"
+      },
+      {
+        "label": "Beyond the Diff: Context, Testing, and Model Selection",
+        "href": "https://greptile.com/blog/how-to-build-a-code-review-agent"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 10/27:",
+        "lead": "Agentic code review: best practices and architectures",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1u8WYtFj0O9yc4H4JX9D4URYKhDzvrAGKLzn38DXSrak/edit?usp=drive_link",
+            "gated": true
+          }
+        ]
+      },
+      {
+        "date": "Thu 10/29:",
+        "lead": "Guest: Silas Alberti (Chief Research Officer @ Cognition)",
+        "profile": "https://sil.as"
+      }
+    ]
+  },
+  {
+    "title": "Week 7: Security",
+    "topics": [
+      "SAST / SCA, dependency and secret-leak vulnerabilities",
+      "Prompt injection and agent-specific attack surfaces",
+      "Agent-assisted triage and remediation"
+    ],
+    "sessions": [
+      {
+        "date": "Tue 11/3:",
+        "lead": "No class - University holiday"
+      },
+      {
+        "date": "Thu 11/5:",
+        "lead": "Guest: Isaac Evans (CEO @ Semgrep)",
+        "profile": "https://www.linkedin.com/in/isaacevans"
+      }
+    ]
+  },
+  {
+    "title": "Week 8: Background Agents",
+    "topics": [
+      "Async, cloud-delegated agents",
+      "Managing fleets of parallel agents",
+      "Issue-to-PR pipelines and triggers (Slack, Linear, GitHub)"
+    ],
+    "reading": [
+      {
+        "label": "Spotify: From Migration Scripts to Agent Fleets",
+        "href": "https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1"
+      },
+      {
+        "label": "Stripe: From Slack Message to Review-Ready PR",
+        "href": "https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents"
+      },
+      {
+        "label": "Ramp: Giving Agents the Tools to Prove Their Work",
+        "href": "https://builders.ramp.com/post/why-we-built-our-background-agent"
+      },
+      {
+        "label": "LangChain: Inside an Open-Source Software Factory",
+        "href": "https://github.com/langchain-ai/open-swe"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 11/10:",
+        "lead": "Background agents: launching tasks asynchronously",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1R8Pr3RNAFQiw8mHKbXopOhxi_h9zuEeUKrJkxCZ5Fio/edit?usp=sharing",
+            "gated": true
+          }
+        ]
+      },
+      {
+        "date": "Thu 11/12:",
+        "lead": "Guest: Rajesh Bhatia (Senior Director @ Cloudflare)",
+        "profile": "https://www.linkedin.com/in/rajeshbh"
+      }
+    ]
+  },
+  {
+    "title": "Week 9: The Software Factory",
+    "topics": [
+      "The software factory as an operating model",
+      "Self-running, self-improving software systems",
+      "Running and securing agents post-deployment"
+    ],
+    "reading": [
+      {
+        "label": "From Issue to Pull Request: A Warp Factory Example",
+        "href": "https://github.com/warpdotdev/warp-factory-examples/tree/main/examples/02-sdlc-issue-to-pr"
+      },
+      {
+        "label": "The Software Factory",
+        "href": "https://software-factory.dev"
+      },
+      {
+        "label": "OpenInspect",
+        "href": "https://openinspect.dev"
+      },
+      {
+        "label": "WarpBench: Evaluating Coding Agents",
+        "href": "https://warp.dev/factories/benchmarks/warpbench"
+      }
+    ],
+    "sessions": [
+      {
+        "date": "Tue 11/17:",
+        "lead": "The Software Factory and self-improving software systems",
+        "links": [
+          {
+            "label": "Slides",
+            "href": "https://docs.google.com/presentation/d/1hxlLspHQ2WOs2tZmCN3gdDi7dfbbRorxzPr65HyyE6Y/edit?usp=sharing",
+            "gated": true
+          }
+        ]
+      },
+      {
+        "date": "Thu 11/19:",
+        "lead": "Guest: Michele Catasta (President @ Replit)",
+        "profile": "https://www.linkedin.com/in/michelecatasta"
+      }
+    ]
+  },
+  {
+    "title": "Week 10: The AI-Native Team + The Future",
+    "topics": [
+      "MCP portals and centralized, permissioned tool access",
+      "LLM gateways, model routing, and cost optimization",
+      "Org-wide adoption patterns",
+      "Software taste and the enduring role of human judgment"
+    ],
+    "sessions": [
+      {
+        "date": "Tue 12/1:",
+        "lead": "Building the AI-native team (MCP portals, LLM gateways, org patterns, cost optimization, and model routing)"
+      },
+      {
+        "date": "Thu 12/3:",
+        "lead": "Software taste and what's left for humans"
+      }
+    ]
+  }
+]

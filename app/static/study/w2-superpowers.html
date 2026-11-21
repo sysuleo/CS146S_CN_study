@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Superpowers：把一套开发方法写成 Agent 的 Skills · CS146S 学习站</title>
+<meta name="description" content="Superpowers：把一套开发方法写成 Agent 的 Skills 的中文精译、学习者总结与延伸练习">
+<link rel="stylesheet" href="assets/study.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">CS146S <span>学习站</span></a>
+    <nav>
+      <a href="../schedule.html">返回课表</a>
+      <a href="index.html">全部导读</a>
+      <a class="original" href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </nav>
+  </div>
+</header>
+<main class="article-shell">
+  <div class="article-layout">
+    <aside class="toc-side">
+      <details open>
+        <summary>本页目录</summary>
+        <nav class="toc-nav">
+<ul><li class="toc-l2"><a href="#_1">总结</a></li><li class="toc-l2"><a href="#_2">原文逐段对照翻译</a><ul><li class="toc-l3"><a href="#_3">它是什么</a></li><li class="toc-l3"><a href="#subagent">实现：subagent 驱动开发</a></li><li class="toc-l3"><a href="#skills">核心 skills</a></li><li class="toc-l3"><a href="#_4">调试与验证</a></li><li class="toc-l3"><a href="#_5">协作与并行</a></li><li class="toc-l3"><a href="#_6">元技能与原则</a></li><li class="toc-l3"><a href="#_7">自动触发与诊断</a></li><li class="toc-l3"><a href="#_8">安装与生态</a></li></ul></li><li class="toc-l2"><a href="#_9">学习者视角</a><ul><li class="toc-l3"><a href="#_10">关键收获</a></li><li class="toc-l3"><a href="#_11">放回课程里看</a></li><li class="toc-l3"><a href="#_12">一个反直觉点</a></li></ul></li><li class="toc-l2"><a href="#_13">拓展</a><ul><li class="toc-l3"><a href="#_14">思考题</a></li><li class="toc-l3"><a href="#_15">练习</a></li><li class="toc-l3"><a href="#_16">接着读</a></li></ul></li></ul>
+        </nav>
+        <a class="toc-top" href="#top">回到顶部 ↑</a>
+      </details>
+    </aside>
+    <article id="top">
+      <div class="breadcrumb"><a href="index.html">学习站</a> / Week 2 · 高级上下文工程</div>
+    <header class="article-head">
+      <div class="kicker">Week 2 · 开源项目 · 全文精译</div>
+      <h1>Superpowers：把一套开发方法写成 Agent 的 Skills</h1>
+      <p class="original-title">原文：<a href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">Superpowers: A complete software development methodology for your coding agents</a></p>
+      <div class="meta">
+        <span>Jesse Vincent / Prime Radiant</span>
+        <span>2026</span>
+        <span>约 10 分钟</span>
+      </div>
+    </header>
+    <div class="article-body">
+<h2 id="_1">总结</h2>
+<p>Superpowers 不是“更多 prompt”，而是一套<strong>完整的软件开发方法论</strong>，由一组可组合的 skills 和启动指令组成。</p>
+<ul>
+<li>启动后先“后退一步”，问清楚你真正想做什么。</li>
+<li>把需求整理成 spec，分成小块给你确认。</li>
+<li>设计通过后，生成一份“连差劲的初级工程师都能照着做”的实施计划。</li>
+<li>计划强调真正的 red/green TDD、YAGNI、DRY。</li>
+<li>实现阶段用 subagent 逐任务推进，每个任务后检查、审查。</li>
+<li>自动化触发，不需要你记住每个 skill 的名字。</li>
+<li>核心 skills 覆盖：brainstorming、worktrees、写计划、subagent 开发、TDD、代码审查、收尾。</li>
+</ul>
+<h2 id="_2">原文逐段对照翻译</h2>
+<blockquote>
+<p><strong>翻译说明：</strong>以下按原文顺序逐段翻译，保留核心方法论、skills 列表和工作流；安装矩阵较长，正文中概括为“支持多种 harness”，完整命令保留在原文。</p>
+</blockquote>
+<h3 id="_3">它是什么</h3>
+<div class="bilingual-pair">
+<p class="src">Superpowers is a complete software development methodology for your coding agents, built on top of a set of composable skills and some initial instructions that make sure your agent uses them.</p>
+<p class="dst">Superpowers 是一套完整的软件开发方法论，面向 coding agent，建立在一组可组合的 skills 和一段启动指令之上，确保 agent 真的会使用这些 skills。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">It starts from the moment you fire up your coding agent. As soon as it sees that you're building something, it doesn't just jump into trying to write code. Instead, it steps back and asks you what you're really trying to do.</p>
+<p class="dst">从你启动 coding agent 的那一刻起，它就开始工作。看到你要构建东西时，它不会立刻跳进去写代码，而是先退后一步，问清楚你真正想做什么。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Once it's teased a spec out of the conversation, it shows it to you in chunks short enough to actually read and digest.</p>
+<p class="dst">等它从对话里梳理出一份 spec，会把 spec 切成足够短的块展示给你，让你真的能读完、消化。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">After you've signed off on the design, your agent puts together an implementation plan that's clear enough for an enthusiastic junior engineer with poor taste, no judgement, no project context, and an aversion to testing to follow. It emphasizes true red/green TDD, YAGNI, and DRY.</p>
+<p class="dst">设计确认后，agent 会制定实施计划。这份计划要清晰到“一个热情但品味差、没有判断力、没有项目上下文、讨厌测试的初级工程师”也能照着做。它强调真正的 red/green TDD、YAGNI 和 DRY。</p>
+</div>
+
+<h3 id="subagent">实现：subagent 驱动开发</h3>
+<div class="bilingual-pair">
+<p class="src">Next up, once you say "go", it launches a subagent-driven-development process, having agents work through each engineering task, inspecting and reviewing their work, and continuing forward. It's not uncommon for your agent to work autonomously for a couple hours at a time without deviating from the plan you put together.</p>
+<p class="dst">你说“开始”后，它启动 subagent-driven development：让 agent 逐个完成工程任务，每个任务后检查和审查，再继续下一个。它经常能连续自主工作几个小时，而不偏离你们一起制定的计划。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">There's a bunch more to it, but that's the core of the system. And because the skills trigger automatically, you don't need to do anything special. Your coding agent just has Superpowers.</p>
+<p class="dst">细节还有很多，但这是系统的核心。因为 skills 会自动触发，你不需要记特殊命令——你的 coding agent 直接“拥有超能力”。</p>
+</div>
+
+<h3 id="skills">核心 skills</h3>
+<div class="bilingual-pair">
+<p class="src">brainstorming activates before building anything. It draws out what you actually want, and why, through questions that get you describing it, then plays its understanding back for correction. Small changes get agreed in chat; projects get a written design document a builder could plan from.</p>
+<p class="dst">`brainstorming` 在构建任何东西之前触发。它通过提问把你真正想要的东西和原因问出来，再复述自己的理解让你纠正。小改动在聊天里确认；大项目会产出书面设计文档，供后续制定计划。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">using-git-worktrees activates after design approval. It creates an isolated workspace on a new branch, runs project setup, and verifies a clean test baseline.</p>
+<p class="dst">`using-git-worktrees` 在设计通过后触发：创建新分支上的隔离工作区，跑项目初始化，并确认测试基线是干净的。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">writing-plans activates with an approved design. It breaks work into bite-sized tasks, 2-5 minutes each. Every task has exact file paths, complete code, and verification steps.</p>
+<p class="dst">`writing-plans` 在设计通过后触发：把工作拆成 2–5 分钟一个的小任务，每个任务都写清精确文件路径、完整代码和验证步骤。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">subagent-driven-development or executing-plans activates with a plan. Either dispatches a fresh subagent per task with a review after each, or implements every task inline in the current session with one fresh review of the whole branch at the end.</p>
+<p class="dst">`subagent-driven-development` 或 `executing-plans` 在计划完成后触发：要么每个任务派一个新 subagent、每个任务后审查；要么在当前会话里依次实现，最后对整个分支做一次全新审查。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">test-driven-development activates during implementation. It enforces RED-GREEN-REFACTOR: write a failing test, watch it fail, write minimal code, watch it pass, commit. It deletes code written before tests.</p>
+<p class="dst">`test-driven-development` 在实现阶段触发，强制执行 RED-GREEN-REFACTOR：先写失败测试、看它失败，再写最小实现、看它通过，然后提交。测试之前写的代码会被删掉。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">requesting-code-review activates between tasks. It reviews against the plan and reports issues by severity. Critical issues block progress.</p>
+<p class="dst">`requesting-code-review` 在任务之间触发：对照计划审查，按严重程度报告问题；critical 问题会阻断继续推进。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">finishing-a-development-branch activates when tasks complete. It verifies tests, presents options (merge/PR/keep/discard), and cleans up the worktree.</p>
+<p class="dst">`finishing-a-development-branch` 在任务完成时触发：验证测试，给出合并/PR/保留/丢弃选项，并清理 worktree。</p>
+</div>
+
+<h3 id="_4">调试与验证</h3>
+<div class="bilingual-pair">
+<p class="src">systematic-debugging is a 4-phase root cause process, including root-cause-tracing, defense-in-depth, and condition-based-waiting techniques. verification-before-completion ensures it's actually fixed.</p>
+<p class="dst">`systematic-debugging` 是四阶段根因流程，包含根因追踪、纵深防御、基于条件的等待等技巧；`verification-before-completion` 确保问题真的修好了。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">diagnosing-superpowers works out what went wrong in a session, with evidence. It reads the session transcript, reports what happened with line-level evidence, and can package a scrubbed bundle for a bug report.</p>
+<p class="dst">`diagnosing-superpowers` 用来分析一次会话里 skills 为什么没按预期工作。它会读会话 transcript，给出带行号证据的报告，还可以打包一份脱敏 bundle 供提 issue。</p>
+</div>
+
+<h3 id="_5">协作与并行</h3>
+<div class="bilingual-pair">
+<p class="src">dispatching-parallel-agents supports concurrent subagent workflows. using-git-worktrees supports parallel development branches. receiving-code-review helps respond to feedback instead of just defending.</p>
+<p class="dst">`dispatching-parallel-agents` 支持并发 subagent 工作流；`using-git-worktrees` 支持并行开发分支；`receiving-code-review` 帮你正确回应反馈，而不是本能防守。</p>
+</div>
+
+<h3 id="_6">元技能与原则</h3>
+<div class="bilingual-pair">
+<p class="src">writing-skills is for creating new skills following best practices, including testing methodology. using-superpowers is the introduction to the skills system.</p>
+<p class="dst">`writing-skills` 教你按最佳实践创建新 skill，包括测试方法；`using-superpowers` 是 skills 系统的入门。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The project's principles: Test-Driven Development—write tests first, always. Systematic over ad-hoc—process over guessing. Complexity reduction—simplicity as primary goal. Evidence over claims—verify before declaring success.</p>
+<p class="dst">项目原则：测试驱动——永远先写测试；系统化而非临时应付——流程优先于猜测；降低复杂度——简单是首要目标；证据优先于声称——宣布成功前先验证。</p>
+</div>
+
+<h3 id="_7">自动触发与诊断</h3>
+<div class="bilingual-pair">
+<p class="src">The agent checks for relevant skills before any task. Mandatory workflows, not suggestions. Sometimes a session misbehaves: a skill fires when it shouldn't, stays silent when it should, or the agent ignores its plan. Ask your agent to "figure out what went wrong with superpowers in this session" and it will invoke diagnosing-superpowers.</p>
+<p class="dst">agent 在执行任务前会检查相关 skills；这些是强制工作流，不是建议。有时会话会出问题：skill 在不该触发时触发、该触发时沉默，或者 agent 无视计划。这时让它“分析这次会话里 superpowers 出了什么问题”，它会调用 `diagnosing-superpowers`。</p>
+</div>
+
+<h3 id="_8">安装与生态</h3>
+<div class="bilingual-pair">
+<p class="src">Installation differs by harness. Superpowers is available via the official Claude plugin marketplace, Codex plugin marketplace, Cursor, Gemini, Copilot, OpenCode, Pi, Qwen, and others. If you use more than one harness, install Superpowers separately for each one.</p>
+<p class="dst">安装方式因 harness 而异。Superpowers 可通过 Claude、Codex 官方插件市场，以及 Cursor、Gemini、Copilot、OpenCode、Pi、Qwen 等渠道安装。如果你用多个 harness，需要分别安装。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Superpowers is built by Jesse Vincent and the rest of the folks at Prime Radiant. It is MIT licensed. The project does not generally accept contributions of new skills, and updates must work across all supported coding agents.</p>
+<p class="dst">Superpowers 由 Jesse Vincent 和 Prime Radiant 团队开发，MIT 许可。项目通常不接受“新增 skill”的贡献，且任何 skill 更新都必须兼容所有支持的 coding agent。</p>
+</div>
+
+<h2 id="_9">学习者视角</h2>
+<h3 id="_10">关键收获</h3>
+<ol>
+<li><strong>方法论可以产品化。</strong> Superpowers 把“怎么做软件”拆成可加载、可组合、可自动触发的 skills。</li>
+<li><strong>TDD 是 agent 的反馈回路。</strong> 没有测试，agent 只能“看起来完成了”；红绿循环才提供可验证进展。</li>
+<li><strong>计划要写到可执行粒度。</strong> 不是“实现登录”，而是“改哪个文件、加什么函数、怎么验证”。</li>
+<li><strong>Subagent 的价值是隔离和审查。</strong> 每任务独立上下文，完成后立即检查，避免错误累积。</li>
+<li><strong>自动触发降低使用成本。</strong> 如果每个 skill 都要用户记命令，方法论就落不了地。</li>
+</ol>
+<h3 id="_11">放回课程里看</h3>
+<p>Superpowers 是 Week 2 “Agentic dev frameworks” 的代表：它把 RePPIT、spec-driven、TDD、subagent 编排组合成一套可安装的工程方法。它和 <a href="w2-openspec.html">OpenSpec</a> 的差别是：OpenSpec 更像规格与变更管理层，Superpowers 更像执行方法论。</p>
+<h3 id="_12">一个反直觉点</h3>
+<p>它没有追求“让 agent 写更多代码”，反而强调 YAGNI、DRY、先设计再实现。真正的目标不是吞吐量，而是可维护的产出。</p>
+<h2 id="_13">拓展</h2>
+<h3 id="_14">思考题</h3>
+<ol>
+<li>如果你的团队已经有一套开发流程，Superpowers 应该替换它，还是只吸收其中几个 skill？</li>
+<li>自动触发 skill 的风险是什么？如何防止“skill 在不该触发时触发”？</li>
+<li>为什么“给初级工程师也能照做”是好的计划标准？</li>
+</ol>
+<h3 id="_15">练习</h3>
+<p>选一个中等规模的功能，按 Superpowers 的流程走一遍：</p>
+<ol>
+<li>brainstorming：写出你真正想解决的问题；</li>
+<li>spec：写成可确认的行为描述；</li>
+<li>plan：拆成 2–5 分钟一个任务，每个任务写清文件、代码、验证；</li>
+<li>为第一个任务先写失败测试；</li>
+<li>完成后做一次规格符合性审查，再做一次代码质量审查。</li>
+</ol>
+<h3 id="_16">接着读</h3>
+<ul>
+<li><a href="w2-openspec.html">OpenSpec：显式的规格工作流</a></li>
+<li><a href="w3-matt-pocock-s-skills.html">Matt Pocock's Skills：小型、可组合的工程 skills</a></li>
+<li><a href="w3-pstack.html">pstack：反 slop 的工程纪律</a></li>
+</ul>
+    </div>
+    <div class="article-foot">
+      <div class="notice">
+        <strong>阅读说明：</strong>本页按原文顺序精译，合并了重复表述；所有关键论点、数据和结论均来自原文。
+      </div>
+      <div class="pager">
+        <a class="prev" href="w2-openspec.html">← OpenSpec：用轻量规格把“做对的事”和“把事做对”分开</a>
+        <a class="next" href="w2-enterprise-mcp-cloudflare.html">企业级 MCP：Cloudflare 的参考架构 →</a>
+      </div>
+      </div>
+    </article>
+  </div>
+</main>
+<footer class="site-foot">
+  <p>CS146S: The Modern Software Developer · Fall 2026 · 中文学习站</p>
+  <p><a href="../schedule.html">回到课程表</a></p>
+</footer>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const max = h.scrollHeight - h.clientHeight;
+  bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+}, { passive: true });
+
+const tocLinks = [...document.querySelectorAll('.toc-nav a')];
+const tocDetails = document.querySelector('.toc-side details');
+if (tocDetails && window.matchMedia('(max-width: 1080px)').matches) {
+  tocDetails.removeAttribute('open');
+}
+const tocTargets = tocLinks
+  .map((link) => document.getElementById(link.getAttribute('href').slice(1)))
+  .filter(Boolean);
+if ('IntersectionObserver' in window && tocTargets.length) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      tocLinks.forEach((link) => link.classList.remove('active'));
+      const active = tocLinks.find((link) => link.getAttribute('href') === '#' + entry.target.id);
+      if (active) active.classList.add('active');
+    });
+  }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+  tocTargets.forEach((target) => observer.observe(target));
+}
+</script>
+</body>
+</html>

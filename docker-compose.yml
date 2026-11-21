@@ -1,0 +1,13 @@
+services:
+  cs146s:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8787}:${PORT:-8787}"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "${PORT:-8787}"
+      STUDY_API_TOKEN: "${STUDY_API_TOKEN:-}"
+      STUDY_ALLOW_RESTART: "${STUDY_ALLOW_RESTART:-0}"
+    volumes:
+      - ./.local:/app/.local

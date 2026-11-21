@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warp Factory 示例：从 Issue 到 Pull Request 的完整工程流水线 · CS146S 学习站</title>
+<meta name="description" content="Warp Factory 示例：从 Issue 到 Pull Request 的完整工程流水线 的中文精译、学习者总结与延伸练习">
+<link rel="stylesheet" href="assets/study.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">CS146S <span>学习站</span></a>
+    <nav>
+      <a href="../schedule.html">返回课表</a>
+      <a href="index.html">全部导读</a>
+      <a class="original" href="https://github.com/warpdotdev/warp-factory-examples/tree/main/examples/02-sdlc-issue-to-pr" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </nav>
+  </div>
+</header>
+<main class="article-shell">
+  <div class="article-layout">
+    <aside class="toc-side">
+      <details open>
+        <summary>本页目录</summary>
+        <nav class="toc-nav">
+<ul><li class="toc-l2"><a href="#_1">总结</a></li><li class="toc-l2"><a href="#_2">原文逐段对照翻译</a><ul><li class="toc-l3"><a href="#_3">这个示例展示了什么</a></li><li class="toc-l3"><a href="#_4">目录结构</a></li><li class="toc-l3"><a href="#runner">Runner 配置</a></li><li class="toc-l3"><a href="#github">GitHub 入口如何路由</a></li><li class="toc-l3"><a href="#_5">定制这个示例</a></li><li class="toc-l3"><a href="#jira-linear">用 Jira 替代 Linear</a></li><li class="toc-l3"><a href="#trigger">配置更多 trigger</a></li></ul></li><li class="toc-l2"><a href="#_6">学习者视角</a><ul><li class="toc-l3"><a href="#_7">关键收获</a></li><li class="toc-l3"><a href="#_8">放回课程里看</a></li><li class="toc-l3"><a href="#_9">一个反直觉点</a></li></ul></li><li class="toc-l2"><a href="#_10">拓展</a><ul><li class="toc-l3"><a href="#_11">思考题</a></li><li class="toc-l3"><a href="#_12">练习</a></li><li class="toc-l3"><a href="#_13">接着读</a></li></ul></li></ul>
+        </nav>
+        <a class="toc-top" href="#top">回到顶部 ↑</a>
+      </details>
+    </aside>
+    <article id="top">
+      <div class="breadcrumb"><a href="index.html">学习站</a> / Week 9 · 软件工厂</div>
+    <header class="article-head">
+      <div class="kicker">Week 9 · 开源项目 · 全文精译</div>
+      <h1>Warp Factory 示例：从 Issue 到 Pull Request 的完整工程流水线</h1>
+      <p class="original-title">原文：<a href="https://github.com/warpdotdev/warp-factory-examples/tree/main/examples/02-sdlc-issue-to-pr" target="_blank" rel="noopener noreferrer">02: Issue to pull request</a></p>
+      <div class="meta">
+        <span>Warp</span>
+        <span>2026</span>
+        <span>约 12 分钟</span>
+      </div>
+    </header>
+    <div class="article-body">
+<h2 id="_1">总结</h2>
+<p>这个示例展示的不是“一个会写代码的 agent”，而是一整套<strong>把请求变成 PR 的工程流水线</strong>。</p>
+<ul>
+<li>入口有三个：Slack、Linear、GitHub；请求先经过 triage，需要时再生成 spec。</li>
+<li>IMPLEMENT 负责改代码，REVIEW 用不同模型做审查，降低共享盲点。</li>
+<li>三种 runner 按阶段分配算力：读代码、跑构建、跑 macOS 构建各用各的机器。</li>
+<li>GitHub 触发条件用 AND 组合：必须同时匹配 mention/assignment 和 routing label。</li>
+<li>所有配置都是文件：agents、automations、runners、scorers、skills 都可以读、可以改。</li>
+<li>最后一步仍然交给人：factory 只负责把 PR 准备好，合并由人决定。</li>
+</ul>
+<h2 id="_2">原文逐段对照翻译</h2>
+<blockquote>
+<p><strong>翻译说明：</strong>原文是 Warp Factory 的示例 README。以下按原文顺序翻译全部章节；目录结构、YAML 配置和命令保持原样。</p>
+</blockquote>
+<div class="bilingual-pair">
+<p class="src">This example is a complete engineering factory that takes requests from Slack, Linear, and GitHub through triage, specification when needed, and implementation. A separate agent reviews the changes before the factory hands the pull request to a human.</p>
+<p class="dst">这个示例是一套完整的工程 factory：接收来自 Slack、Linear 和 GitHub 的请求，经过 triage、按需生成 spec、再进入 implementation。改完之后由另一个独立的 agent 做 review，最后把 PR 交给人类。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The example recreates the default agents and automations that Warp sets up for a new factory, as files you can read and edit. It also adds one custom agent.</p>
+<p class="dst">这个示例把 Warp 为新 factory 默认创建的 agents 和 automations 还原成可读、可改的文件，并额外增加了一个 custom agent。</p>
+</div>
+
+<h3 id="_3">这个示例展示了什么</h3>
+<div class="bilingual-pair">
+<p class="src">All five default agents (FOREMAN, TRIAGE, SPEC, IMPLEMENT, and REVIEW) appear, along with a CUSTOM agent for work the default agents don't cover. The triage and reviewer agents override the default model. The reviewer uses a different model than the implementer to reduce shared blind spots.</p>
+<p class="dst">五个默认 agent（FOREMAN、TRIAGE、SPEC、IMPLEMENT、REVIEW）全部出现，另有一个 CUSTOM agent 处理默认 agent 覆盖不到的工作。triage 和 reviewer 覆盖了默认 model；reviewer 使用与 implementer 不同的模型，以减少共享盲点。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Three runners differ by size, image, and operating system, and each agent can select the one that suits its stage. See Runner configuration.</p>
+<p class="dst">三个 runner 在规格、镜像和操作系统上各不相同，每个 agent 可以选择适合自己阶段的 runner。详见下面的 Runner configuration。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Requests come in from Slack, Linear, and GitHub, and a follow-up automation handles closed or merged pull requests. The directory structure below lists each automation's trigger.</p>
+<p class="dst">请求来自 Slack、Linear 和 GitHub，另有一个后续 automation 处理已关闭或已合并的 PR。下面的目录结构列出了每个 automation 的触发方式。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The integrations list declares slack and linear, and the factory covers multiple repositories.</p>
+<p class="dst"><code>integrations</code> 列表声明了 <code>slack</code> 和 <code>linear</code>，这个 factory 覆盖多个仓库。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Skills under skills/ are available to every agent. Skills under agents/&lt;name&gt;/skills/ are available only to that agent.</p>
+<p class="dst"><code>skills/</code> 下的 skill 对所有 agent 可用；<code>agents/&lt;name&gt;/skills/</code> 下的 skill 只对该 agent 可用。</p>
+</div>
+
+<h3 id="_4">目录结构</h3>
+<p><strong>目录结构：</strong>以下代码块保持原文；每个目录对应 factory 的一个部分：agents、automations、runners、scorers 和共享 skills。</p>
+
+<pre><code class="language-text">factory.yaml
+agents/
+  foreman/agent.md       FOREMAN
+  triage/agent.md        TRIAGE   (model: auto-efficient)
+  spec/agent.md          SPEC
+  implementer/agent.md   IMPLEMENT (runner: linux-build)
+    skills/testing-standards/SKILL.md
+  reviewer/agent.md      REVIEW   (model: auto-genius)
+  mobile-build/agent.md  CUSTOM   (runner: macos-build)
+automations/
+  slack-app-mentions/    slack/app_mention
+  slack-dms/             slack/message_dm
+  linear-agent-sessions/ linear/agent_session_created
+  github-mention-assign/ github issue+PR mentioned/assigned
+  github-pr-closed-or-merged/  merged → complete work items
+runners/
+  linux-standard.yaml    4 vCPU / 8 GB, ubuntu:24.04
+  linux-build.yaml       8 vCPU / 16 GB, golang:1.24-bookworm
+  macos-build.yaml       6 vCPU / 14 GB, macos/aarch64
+scorers/
+  task-compliance/       scores implementer runs, selfImprovement on
+  review-quality/        scores reviewer runs
+skills/
+  repository-conventions/SKILL.md   shared by every agent
+</code></pre>
+<h3 id="runner">Runner 配置</h3>
+<div class="bilingual-pair">
+<p class="src">Each agent chooses its own compute. This factory uses three runners because its stages have different needs:</p>
+<p class="dst">每个 agent 自己选择算力。这个 factory 使用三个 runner，因为不同阶段的需求不同：</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">linux-standard (4 vCPU / 8 GB, ubuntu:24.04) is the agentDefaults runner, which the foreman, triage, spec, and review agents inherit. These stages read code and write prose.</p>
+<p class="dst"><code>linux-standard</code>（4 vCPU / 8 GB，<code>ubuntu:24.04</code>）是 <code>agentDefaults</code> 的 runner，foreman、triage、spec 和 review 都继承它。这些阶段主要是读代码、写文字。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">linux-build (8 vCPU / 16 GB, golang:1.24-bookworm) runs implementation, which compiles code and runs tests. The image provides the toolchain, so use setupCommands only for what the image lacks, and write them defensively. A setup command that exits non-zero fails the whole sandbox.</p>
+<p class="dst"><code>linux-build</code>（8 vCPU / 16 GB，<code>golang:1.24-bookworm</code>）运行 implementation，负责编译代码和跑测试。镜像已经提供工具链，所以 <code>setupCommands</code> 只补镜像缺少的东西，并且要写得防御性一些：任何一条 setup command 以非零退出，整个 sandbox 都会失败。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">macos-build (6 vCPU / 14 GB, macos/aarch64) runs the mobile-build agent. macOS sandboxes are virtual machines, not containers, so this runner declares no dockerImage. It takes an optional mac.version instead and accepts only a fixed set of shapes. macOS is aarch64-only.</p>
+<p class="dst"><code>macos-build</code>（6 vCPU / 14 GB，<code>macos/aarch64</code>）运行 <code>mobile-build</code> agent。macOS sandbox 是虚拟机而不是容器，所以这个 runner 不声明 <code>dockerImage</code>，而是接收可选的 <code>mac.version</code>，并且只接受一组固定规格。macOS 只有 <code>aarch64</code>。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Linux shapes must be powers of two. A runner named by an agent overrides the runner in agentDefaults.</p>
+<p class="dst">Linux 规格必须是 2 的幂。agent 显式指定的 runner 会覆盖 <code>agentDefaults</code> 里的 runner。</p>
+</div>
+
+<h3 id="github">GitHub 入口如何路由</h3>
+<div class="bilingual-pair">
+<p class="src">The mention and assignment automation mirrors the default automation that Warp creates during setup. It watches only acme/api-service and acme/webapp, so GitHub mentions and assignments in acme/ios-app don't start work. GitHub intake for iOS work isn't set up.</p>
+<p class="dst">mention 和 assignment automation 与 Warp 初始化时创建的默认 automation 一致。它只监听 <code>acme/api-service</code> 和 <code>acme/webapp</code>，所以 <code>acme/ios-app</code> 里的 GitHub mention 和 assignment 不会启动任务；iOS 工作的 GitHub 入口没有配置。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Filter keys combine with AND. Each trigger combines a mention or assignment filter with a label filter:</p>
+<p class="dst">Filter 的各个 key 用 AND 组合。每个 trigger 都是“mention 或 assignment 条件”再加“label 条件”：</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">mentioned: [warp, warp-factory] and assignees: [warp, warp-factory] restrict the trigger to the GitHub handles Warp Factories answers to. The current handle is warp. The earlier handle, warp-factory, still matches. Both are product constants, not placeholders. Without the mentioned key, issue_mentioned fires when anyone is @-mentioned in the repositories.</p>
+<p class="dst"><code>mentioned: [warp, warp-factory]</code> 和 <code>assignees: [warp, warp-factory]</code> 把 trigger 限制在 Warp Factories 会响应的 GitHub handle 上。当前 handle 是 <code>warp</code>，早期的 <code>warp-factory</code> 仍然匹配。两者都是产品常量，不是占位符。如果不写 <code>mentioned</code>，那么仓库里任何人被 @ 提到都会触发 <code>issue_mentioned</code>。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">labels: ["factory:Acme"] is the factory's routing label, factory:&lt;alias&gt;. Because filters combine with AND, the label must be on the issue or pull request before a mention or assignment can trigger the factory. A @warp mention on an unlabeled item is silently dropped, so apply the label when you open the item or before the first mention. After that, the foreman keeps the label on everything it touches, so later mentions and assignments keep matching.</p>
+<p class="dst"><code>labels: ["factory:Acme"]</code> 是这个 factory 的路由 label，格式是 <code>factory:&lt;alias&gt;</code>。因为 filter 用 AND 组合，issue 或 PR 上必须先有这个 label，mention 或 assignment 才能触发 factory。未打 label 的条目上写 <code>@warp</code> 会被静默丢弃，所以要在创建条目时或第一次 mention 之前打上 label。之后 foreman 会一直给它接触的所有东西保留这个 label，后续 mention 和 assignment 才能继续匹配。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The closed-or-merged follow-up automation watches acme/api-service, acme/webapp, and acme/ios-app. The mobile-build agent's pull requests land in acme/ios-app and need the same follow-up when they are closed or merged. The same routing label limits the automation to factory pull requests instead of every merge in the repository.</p>
+<p class="dst">closed-or-merged 后续 automation 监听 <code>acme/api-service</code>、<code>acme/webapp</code> 和 <code>acme/ios-app</code>。<code>mobile-build</code> agent 的 PR 会落在 <code>acme/ios-app</code>，关闭或合并时也需要同样的后续处理。它同样用 routing label 把 automation 限制在 factory 的 PR 上，而不是仓库里的每一次 merge。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Widen these filters carefully. If you drop the labels key from the mention triggers, any @warp mention starts work. If you also drop mentioned, the trigger fires on every mention of anyone.</p>
+<p class="dst">放宽这些 filter 时要小心。如果去掉 mention trigger 里的 <code>labels</code>，任何 <code>@warp</code> mention 都会启动任务；如果连 <code>mentioned</code> 也去掉，那么任何人被 mention 都会触发。</p>
+</div>
+
+<h3 id="_5">定制这个示例</h3>
+<div class="bilingual-pair">
+<p class="src">1. Replace acme/api-service and acme/webapp with repositories that your installation can access. They appear in factory.yaml and in both GitHub automations. The repository name api-service also appears in the linux-build setup command.</p>
+<p class="dst">1. 把 <code>acme/api-service</code> 和 <code>acme/webapp</code> 换成你的安装可以访问的仓库。它们出现在 <code>factory.yaml</code> 和两个 GitHub automations 里；仓库名 <code>api-service</code> 还出现在 <code>linux-build</code> 的 setup command 里。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">2. Replace acme/ios-app with a repository that your installation can access. It appears in factory.yaml, agents/foreman/agent.md, agents/mobile-build/agent.md, and the github-pr-closed-or-merged automation, but not in the github-mention-assign automation.</p>
+<p class="dst">2. 把 <code>acme/ios-app</code> 换成你的安装可以访问的仓库。它出现在 <code>factory.yaml</code>、<code>agents/foreman/agent.md</code>、<code>agents/mobile-build/agent.md</code> 和 <code>github-pr-closed-or-merged</code> automation 里，但不在 <code>github-mention-assign</code> automation 里。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">3. If you don't have macOS work, delete agents/mobile-build/ and runners/macos-build.yaml, and remove the ios-app entry from factory.yaml and from the github-pr-closed-or-merged automation. Make all of these changes together.</p>
+<p class="dst">3. 如果没有 macOS 相关工作，删除 <code>agents/mobile-build/</code> 和 <code>runners/macos-build.yaml</code>，并从 <code>factory.yaml</code> 和 <code>github-pr-closed-or-merged</code> automation 里移除 <code>ios-app</code>。这些改动要一起做。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">4. Connect Slack to your Warp team.</p>
+<p class="dst">4. 把 Slack 连接到你的 Warp team。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">5. Connect Linear to your Warp team. The integrations list declares which integrations the factory uses, but doesn't connect them.</p>
+<p class="dst">5. 把 Linear 连接到你的 Warp team。<code>integrations</code> 列表只声明 factory 使用哪些 integration，并不会替你完成连接。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">6. Replace the two skill stubs, skills/repository-conventions/SKILL.md and agents/implementer/skills/testing-standards/SKILL.md, with your real conventions.</p>
+<p class="dst">6. 把两个 skill 占位文件 <code>skills/repository-conventions/SKILL.md</code> 和 <code>agents/implementer/skills/testing-standards/SKILL.md</code> 换成你团队真正的约定。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">7. Optionally, narrow intake. Filters combine with AND, and an absent field matches everything. For example, to route only one Linear team, add a filter to the trigger:</p>
+<p class="dst">7. 可选：收窄入口。Filter 用 AND 组合，不写的字段等于匹配所有。比如只路由一个 Linear team，可以给 trigger 加 filter：</p>
+</div>
+
+<pre><code class="language-yaml">triggers:
+  - provider: linear
+    event: agent_session_created
+    filter:
+      teams: [Platform]
+</code></pre>
+<div class="bilingual-pair">
+<p class="src">The teams and projects filters take plain lists of names. Warp resolves the names against Linear when you apply the definition, so add them only after you connect Linear. Otherwise, applying the definition fails on the unresolved name.</p>
+<p class="dst"><code>teams</code> 和 <code>projects</code> filter 接收简单的名称列表。Warp 在应用定义时会拿这些名字去 Linear 里解析，所以要先连接 Linear 再添加；否则应用定义时会因为名字无法解析而失败。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The agent_session_created event also accepts labels, keywords, and creator_ids. It rejects a states filter. Use states with issue_state_changed instead.</p>
+<p class="dst"><code>agent_session_created</code> 事件还接受 <code>labels</code>、<code>keywords</code> 和 <code>creator_ids</code>；它不接受 <code>states</code> filter。需要按状态过滤时，改用 <code>issue_state_changed</code>。</p>
+</div>
+
+<h3 id="jira-linear">用 Jira 替代 Linear</h3>
+<div class="bilingual-pair">
+<p class="src">A factory can attach Linear or Jira, but not both. To use Jira instead of Linear:</p>
+<p class="dst">一个 factory 可以接 Linear 或 Jira，但不能同时接两者。要用 Jira 替代 Linear：</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">1. Change the integration in factory.yaml to - type: jira.</p>
+<p class="dst">1. 把 <code>factory.yaml</code> 里的 integration 改成 <code>- type: jira</code>。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">2. Replace automations/linear-agent-sessions with an automation that uses the jira provider and the agent_session_created event. Jira filters use project_keys instead of team names.</p>
+<p class="dst">2. 把 <code>automations/linear-agent-sessions</code> 换成使用 <code>jira</code> provider 和 <code>agent_session_created</code> 事件的 automation。Jira filter 使用 <code>project_keys</code>，不是 team 名称。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">3. Update the Linear references in the triage prompt.</p>
+<p class="dst">3. 更新 triage prompt 里所有 Linear 相关的引用。</p>
+</div>
+
+<h3 id="trigger">配置更多 trigger</h3>
+<div class="bilingual-pair">
+<p class="src">Intake is defined by triggers, so you can point a factory at other kinds of events without changing its agents. For example, to review pull requests that humans open, and not only factory pull requests, route them directly to the reviewer with the automation's agent: field:</p>
+<p class="dst">入口由 trigger 定义，所以不用改 agents，就能让 factory 处理其他类型的事件。比如要 review 人类开的 PR，而不只是 factory 自己的 PR，可以用 automation 的 <code>agent:</code> 字段直接路由给 reviewer：</p>
+</div>
+
+<pre><code class="language-yaml">agent: reviewer
+triggers:
+  - provider: github
+    event: pull_request_opened
+    filter:
+      repos: [acme/api-service]
+      base_branches: [main]
+      labels:
+        not_in: [wip]
+</code></pre>
+<div class="bilingual-pair">
+<p class="src">The pull_request_synchronized event fires on every push to an open pull request, and pull_request_opened fires for drafts too, so an opt-out label is the practical way to control volume. An automation fires once per delivery, even when several of its triggers match the same event.</p>
+<p class="dst"><code>pull_request_synchronized</code> 会在打开的 PR 每次 push 时触发，<code>pull_request_opened</code> 连 draft 也会触发，所以用一个 opt-out label 是控制触发量的实用办法。一个 automation 每次 delivery 只触发一次，即使多个 trigger 同时匹配同一个事件。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">For recurring work that doesn't start from a human request, such as a dependency sweep, see the cron automation in 06-common-automations.</p>
+<p class="dst">对于不来自人类请求的周期性工作，比如依赖巡检，可以参考 <code>06-common-automations</code> 里的 cron automation。</p>
+</div>
+
+<h2 id="_6">学习者视角</h2>
+<h3 id="_7">关键收获</h3>
+<ol>
+<li><strong>Factory 的核心是流水线，不是单个 agent。</strong> triage、spec、implement、review 各自有输入输出，最后交给人合并。</li>
+<li><strong>模型反转是默认设计。</strong> reviewer 和 implementer 用不同模型，直接针对共享盲点。</li>
+<li><strong>算力按阶段分配。</strong> 读代码用 4 vCPU，编译用 8 vCPU，macOS 构建用虚拟机；没有必要所有阶段都上大机器。</li>
+<li><strong>触发条件要收窄。</strong> mention、assignment、label 用 AND 组合，避免任何一条消息都启动任务。</li>
+<li><strong>配置即代码。</strong> agents、automations、runners、scorers 都能进版本控制，factory 的行为才可复现、可审计。</li>
+</ol>
+<h3 id="_8">放回课程里看</h3>
+<p>这篇是 Week 9 的“software factory”落地样例：它把 Week 8 的后台 agent、Week 6 的 review agent、Week 4 的 AGENTS.md/skills 组合成一条从 issue 到 PR 的流水线。和 <a href="w9-openinspect-background-agents.html">OpenInspect</a> 相比，Warp 更强调多入口、多 runner 和可配置的路由；和 <a href="w9-warpbench.html">WarpBench</a> 搭配看，可以理解“factory 配置”如何进一步被 benchmark 优化。</p>
+<h3 id="_9">一个反直觉点</h3>
+<p>很多人以为 agent 越多越好。这个示例的重点恰恰是<strong>边界</strong>：repos 只监听两个、iOS 入口不配置、mention 必须带 label、review 用不同模型。限制入口和模型重叠，比继续加 agent 更能提升可靠性。</p>
+<h2 id="_10">拓展</h2>
+<h3 id="_11">思考题</h3>
+<ol>
+<li>如果把 triage 和 spec 合并成一个 agent，会失去什么？</li>
+<li>为什么 reviewer 要和 implementer 用不同模型？换模型能解决哪些盲点，不能解决哪些？</li>
+<li>你的团队里，哪些阶段值得用 8 vCPU，哪些阶段 4 vCPU 就够？</li>
+<li>如果去掉 routing label，会发生什么？你会怎么设计一个更安全的默认值？</li>
+</ol>
+<h3 id="_12">练习</h3>
+<p>为你自己的仓库画一条最小的 issue-to-PR factory：</p>
+<ul>
+<li>入口来自哪里（Slack / Linear / GitHub）；</li>
+<li>需要哪几个 agent（triage、spec、implement、review）；</li>
+<li>每个 agent 用哪个 runner；</li>
+<li>reviewer 用哪个不同模型；</li>
+<li>哪些 label 或 filter 用来限制触发范围；</li>
+<li>哪一步必须由人做。</li>
+</ul>
+<h3 id="_13">接着读</h3>
+<ul>
+<li><a href="w9-warpbench.html">WarpBench：用内部 benchmark 把每 PR 成本从 80 美元降到 30 美元</a></li>
+<li><a href="w9-openinspect-background-agents.html">OpenInspect：开源的后台 agent 框架</a></li>
+<li><a href="w9-software-factory.html">Software Factory：10 天 688 个 PR 的实验记录</a></li>
+</ul>
+    </div>
+    <div class="article-foot">
+      <div class="notice">
+        <strong>阅读说明：</strong>本页按原文顺序精译，合并了重复表述；所有关键论点、数据和结论均来自原文。
+      </div>
+      <div class="pager">
+        <a class="prev" href="w8-langchain-robin.html">← LangChain Robin：一个开源的软件工厂</a>
+        <a class="next" href="w9-software-factory.html">Software Factory：10 天、688 个 PR、零人类手写代码的实验 →</a>
+      </div>
+      </div>
+    </article>
+  </div>
+</main>
+<footer class="site-foot">
+  <p>CS146S: The Modern Software Developer · Fall 2026 · 中文学习站</p>
+  <p><a href="../schedule.html">回到课程表</a></p>
+</footer>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const max = h.scrollHeight - h.clientHeight;
+  bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+}, { passive: true });
+
+const tocLinks = [...document.querySelectorAll('.toc-nav a')];
+const tocDetails = document.querySelector('.toc-side details');
+if (tocDetails && window.matchMedia('(max-width: 1080px)').matches) {
+  tocDetails.removeAttribute('open');
+}
+const tocTargets = tocLinks
+  .map((link) => document.getElementById(link.getAttribute('href').slice(1)))
+  .filter(Boolean);
+if ('IntersectionObserver' in window && tocTargets.length) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      tocLinks.forEach((link) => link.classList.remove('active'));
+      const active = tocLinks.find((link) => link.getAttribute('href') === '#' + entry.target.id);
+      if (active) active.classList.add('active');
+    });
+  }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+  tocTargets.forEach((target) => observer.observe(target));
+}
+</script>
+</body>
+</html>

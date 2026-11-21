@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS146S 运维面板</title>
+<style>
+  :root { --red:#8c1515; --ink:#1f2328; --muted:#5d6670; --line:#e3e6ea; --bg:#f5f3ef; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; padding:36px 20px 60px; }
+  h1 { margin:0 0 6px; font-size:30px; }
+  .sub { margin:0 0 24px; color:var(--muted); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; box-shadow:0 8px 24px rgba(40,30,20,.05); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  button, a.btn { border:0; border-radius:999px; padding:9px 15px; font-weight:700; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; }
+  .primary { background:var(--red); color:#fff; }
+  .ghost { background:#f4ece9; color:var(--red); }
+  .warn { background:#fff0ee; color:#a12a1f; }
+  input { padding:8px 10px; border:1px solid var(--line); border-radius:8px; min-width:220px; }
+  pre { background:#23262b; color:#e9e5df; padding:12px; border-radius:9px; overflow:auto; font-size:12px; max-height:340px; }
+  .muted { color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CS146S 运维面板</h1>
+  <p class="sub">健康检查、重建站点、同步 Syllabus、重启服务。生产环境请设置 <code>STUDY_API_TOKEN</code>。</p>
+
+  <div class="card">
+    <div class="row">
+      <input id="token" placeholder="X-API-Token（未配置可留空）">
+      <button class="primary" onclick="health()">健康检查</button>
+      <a class="btn ghost" href="/">返回学习站</a>
+      <a class="btn ghost" href="/schedule">课程表</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>构建任务</h3>
+    <div class="row">
+      <button class="ghost" onclick="job('rebuild')">重新生成站点</button>
+      <button class="ghost" onclick="job('sync')">同步 Syllabus + 重建</button>
+      <button class="ghost" onclick="job('full')">完整重建（含 PPT）</button>
+      <button class="warn" onclick="restart()">重启服务</button>
+    </div>
+    <p class="muted">重启需要 <code>STUDY_ALLOW_RESTART=1</code>，并由 systemd/docker 负责拉起。</p>
+  </div>
+
+  <div class="card">
+    <h3>输出</h3>
+    <pre id="out">ready.</pre>
+  </div>
+</div>
+<script>
+const out = document.getElementById('out');
+const tokenEl = document.getElementById('token');
+function headers(json=false) {
+  const h = {};
+  if (json) h['Content-Type'] = 'application/json';
+  if (tokenEl.value) h['X-API-Token'] = tokenEl.value;
+  return h;
+}
+function show(v) { out.textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2); }
+async function health() {
+  try { show(await (await fetch('/api/health')).json()); } catch (e) { show(String(e)); }
+}
+async function job(kind) {
+  try {
+    const r = await fetch('/api/jobs', { method:'POST', headers: headers(true), body: JSON.stringify({kind}) });
+    show(await r.json());
+  } catch (e) { show(String(e)); }
+}
+async function restart() {
+  if (!confirm('确认重启服务？')) return;
+  try {
+    const r = await fetch('/api/restart', { method:'POST', headers: headers() });
+    show(await r.json());
+  } catch (e) { show(String(e)); }
+}
+</script>
+</body>
+</html>

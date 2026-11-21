@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pstack：反 Slop 的工程纪律 · CS146S 学习站</title>
+<meta name="description" content="pstack：反 Slop 的工程纪律 的中文精译、学习者总结与延伸练习">
+<link rel="stylesheet" href="assets/study.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">CS146S <span>学习站</span></a>
+    <nav>
+      <a href="../schedule.html">返回课表</a>
+      <a href="index.html">全部导读</a>
+      <a class="original" href="https://github.com/cursor/plugins/tree/main/pstack" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </nav>
+  </div>
+</header>
+<main class="article-shell">
+  <div class="article-layout">
+    <aside class="toc-side">
+      <details open>
+        <summary>本页目录</summary>
+        <nav class="toc-nav">
+<ul><li class="toc-l2"><a href="#_1">总结</a></li><li class="toc-l2"><a href="#_2">原文逐段对照翻译</a><ul><li class="toc-l3"><a href="#pstack">为什么是 pstack</a></li><li class="toc-l3"><a href="#poteto-mode23-playbook">/poteto-mode：23 个 playbook 的入口</a></li><li class="toc-l3"><a href="#skills">专项 skills</a></li><li class="toc-l3"><a href="#_3">模型分工</a></li><li class="toc-l3"><a href="#_4">怎么开始</a></li></ul></li><li class="toc-l2"><a href="#_5">学习者视角</a><ul><li class="toc-l3"><a href="#_6">关键收获</a></li><li class="toc-l3"><a href="#_7">放回课程里看</a></li><li class="toc-l3"><a href="#_8">一个反直觉点</a></li></ul></li><li class="toc-l2"><a href="#_9">拓展</a><ul><li class="toc-l3"><a href="#_10">思考题</a></li><li class="toc-l3"><a href="#_11">练习</a></li><li class="toc-l3"><a href="#_12">接着读</a></li></ul></li></ul>
+        </nav>
+        <a class="toc-top" href="#top">回到顶部 ↑</a>
+      </details>
+    </aside>
+    <article id="top">
+      <div class="breadcrumb"><a href="index.html">学习站</a> / Week 3 · Agent Skills 与 CLI</div>
+    <header class="article-head">
+      <div class="kicker">Week 3 · 开源项目 · 全文精译</div>
+      <h1>pstack：反 Slop 的工程纪律</h1>
+      <p class="original-title">原文：<a href="https://github.com/cursor/plugins/tree/main/pstack" target="_blank" rel="noopener noreferrer">pstack: the same skills I use every day to ship high quality code at Cursor</a></p>
+      <div class="meta">
+        <span>poteto</span>
+        <span>2026</span>
+        <span>约 12 分钟</span>
+      </div>
+    </header>
+    <div class="article-body">
+<h2 id="_1">总结</h2>
+<p>pstack 的立场：速度不是目标，深度才是。先在一个 agent 上做深、做对、做到可验证，再谈并行。</p>
+<ul>
+<li>目标不是最大化代码行数，而是写更少、更高质量的代码。</li>
+<li>核心入口是 <code>/poteto-mode</code>：读取任务，匹配 23 个 playbook 之一，再按步骤调用其他 skill。</li>
+<li>默认按模型强项分工：代码委派给 Grok，最难改动、写作和判断交给 Opus 5.5。</li>
+<li>playbook 覆盖调查、修 bug、性能、取证、功能、重构、原型、review、shipping、autonomous run、orchestrate 等。</li>
+<li>核心哲学：先复现、再修；先测量、再优化；先证明、再宣布完成。</li>
+</ul>
+<h2 id="_2">原文逐段对照翻译</h2>
+<blockquote>
+<p><strong>翻译说明：</strong>以下按原文顺序翻译核心理念、playbook、skills 和模型分工；完整安装命令与 23 个 playbook 的细节保留在原文。</p>
+</blockquote>
+<h3 id="pstack">为什么是 pstack</h3>
+<div class="bilingual-pair">
+<p class="src">There's a growing sense that AI writes too much slop code. I agree. I don't want to ship like a team of twenty slop artists. Throughput without quality is not a goal I aspire to. If you want to go fast, go deep first.</p>
+<p class="dst">越来越多人觉得 AI 写了太多 slop code。我同意。我不想让团队像二十个 slop artist 一样出货。没有质量的吞吐量不是我的目标。想快，先做深。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">pstack is my answer. These are the same skills I use every day to ship high quality code at Cursor. This turns cursor into a real engineering team. The goal is not to maximize LOC; in fact, it's the opposite. pstack helps you write less, but higher quality code.</p>
+<p class="dst">pstack 是我的答案。这些是我在 Cursor 每天用来交付高质量代码的 skills。它把 Cursor 变成一支真正的工程团队。目标不是最大化代码行数，恰恰相反：pstack 帮你写得更少，但质量更高。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">pstack gives you fearless parallelism. When you can go deep on one agent and trust it to write good, verifiable code, you can truly parallelize with confidence. Start multiple agents up with poteto-mode and trust that they'll apply rigorous engineering principles to their work.</p>
+<p class="dst">pstack 给你“无所畏惧的并行”。当你能在一个 agent 上做深，并相信它写出可验证的好代码，你才能真正有信心地并行。开多个 agent，用 poteto-mode，相信它们会应用严格的工程原则。</p>
+</div>
+
+<h3 id="poteto-mode23-playbook"><code>/poteto-mode</code>：23 个 playbook 的入口</h3>
+<div class="bilingual-pair">
+<p class="src">Use /poteto-mode at the start of a task. It reads your request, picks from a set of playbooks, and runs the other skills as the steps need them. When invoked it matches your task to a playbook and opens a todo list whose first items are its steps, copied in verbatim.</p>
+<p class="dst">任务开始时用 `/poteto-mode`。它读取请求，从一组 playbook 里选一个，再在步骤需要时调用其他 skills。调用后，它把任务匹配到 playbook，并打开 todo list，把 playbook 的步骤逐字复制进去。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">The 23 playbooks cover investigation, bug fix, perf, hillclimb, runtime forensics, trace forensics, feature, refactoring, prototype, visual parity, authoring a skill, eval, babysit, shipping, autonomous run, orchestrate, autopilot-full, autopilot-stack, session pickup, pause safely, multi-phase plan, worktree cleanup, and opening a PR.</p>
+<p class="dst">23 个 playbook 覆盖：调查、修 bug、性能、hillclimb、运行时取证、trace 取证、功能、重构、原型、视觉对齐、编写 skill、eval、babysit、shipping、autonomous run、orchestrate、autopilot-full、autopilot-stack、接管会话、安全暂停、多阶段计划、worktree 清理、开 PR。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Examples: /poteto-mode this PR has a subtle bug where the scroll drifts every 750ms even when idle. Repro first, then fix and verify. Or: /poteto-mode I'm going to bed. Land the stack even if CI flakes. I want everything merged by morning.</p>
+<p class="dst">例子：`/poteto-mode 这个 PR 有个微妙的 bug：即使 idle，滚动也每 750ms 漂移。先复现，再修并验证。` 或者：`/poteto-mode 我要睡了。即使 CI 抖动也把 stack land 掉，早上前全部合并。`</p>
+</div>
+
+<h3 id="skills">专项 skills</h3>
+<div class="bilingual-pair">
+<p class="src">/how gives a walkthrough of how a subsystem works. /why discovers available MCPs and queries source control, issue tracker, docs, chat, infra observability, error tracking, and analytics. /blast-radius asks what else a small-looking change could break, with the one fact it's safe proven by running code, not asserted.</p>
+<p class="dst">`/how` 讲清一个子系统怎么工作；`/why` 查询版本控制、issue tracker、文档、聊天、可观测性、错误追踪、分析等证据，解释为什么这样设计；`/blast-radius` 分析小改动可能破坏什么，并用运行代码证明“为什么安全”，而不是口头断言。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">/architect settles caller usage, types, and module shape before writing code that crosses a function boundary. /arena runs N parallel attempts at the same thing, then grabs the best parts of each. /swarm runs N parallel workers across different slices, then aggregates one report.</p>
+<p class="dst">`/architect` 在跨函数边界写代码前，先确定调用方、类型和模块形状；`/arena` 对同一任务做 N 个并行尝试，再挑最好的部分；`/swarm` 让 N 个 worker 跑不同切片，最后汇总一份报告。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">/interrogate has different models try to break a diff, keeping only findings a run proves. /tdd writes the failing test first, then fixes it. /unslop removes AI tells from writing. /teach actually helps you understand a change or subsystem, not just get a summary.</p>
+<p class="dst">`/interrogate` 让不同模型尝试攻破一个 diff，只保留被运行证明的发现；`/tdd` 先写失败测试再修；`/unslop` 清理 AI 味写作；`/teach` 帮你真正理解一个改动或子系统，而不只是摘要。</p>
+</div>
+
+<h3 id="_3">模型分工</h3>
+<div class="bilingual-pair">
+<p class="src">Out of the box, the mode splits work by model strength: code delegates (feature, refactoring, bug fix, perf, hillclimb) go to grok, while the hardest changes, prose, and judgment go to opus 5.5. The default panel is opus 5.5 / grok. /setup-pstack changes any of it.</p>
+<p class="dst">默认按模型强项分工：代码委派（feature、refactoring、bug fix、perf、hillclimb）给 Grok；最难的改动、写作和判断给 Opus 5.5。默认组合是 Opus 5.5 / Grok；`/setup-pstack` 可以改。</p>
+</div>
+
+<div class="bilingual-pair">
+<p class="src">Every frontier model has strengths and weaknesses. Use any model with pstack. Many of my skills use multi-model workflows to take advantage of each model's unique strengths.</p>
+<p class="dst">每个前沿模型都有强项和弱项。pstack 可以用任何模型；我的很多 skills 采用多模型工作流，利用各自的长处。</p>
+</div>
+
+<h3 id="_4">怎么开始</h3>
+<div class="bilingual-pair">
+<p class="src">Two steps: run /setup-pstack, pick a reasoning budget, and choose which models you want; use /poteto-mode whenever you're doing anything that requires rigor. If you're stuck or unsure which skill fits, ask /poteto-help.</p>
+<p class="dst">两步：运行 `/setup-pstack`，选 reasoning budget 和模型；做任何需要严谨的事时用 `/poteto-mode`。卡住或不知道用哪个 skill，就问 `/poteto-help`。</p>
+</div>
+
+<h2 id="_5">学习者视角</h2>
+<h3 id="_6">关键收获</h3>
+<ol>
+<li><strong>反 slop 不是反 AI，而是反无验证的产出。</strong> 所有 playbook 都围绕可复现、可测量、可证明。</li>
+<li><strong>入口比工具列表重要。</strong> 23 个 playbook 很多，但用户只需要记住 <code>/poteto-mode</code>。</li>
+<li><strong>模型分工是成本与质量的平衡。</strong> 不是所有任务都值得用最强模型。</li>
+<li><strong>并行建立在信任上。</strong> 先让一个 agent 做深，再复制这套纪律到多个 agent。</li>
+<li><strong>“证明”是核心 artifact。</strong> <code>/blast-radius</code> 要求用运行代码证明安全。</li>
+</ol>
+<h3 id="_7">放回课程里看</h3>
+<p>pstack 是 Week 3 的工程化代表：skills 从“提示词集合”升级为“可路由、可组合、可验证的工作流系统”。它和 <a href="w2-superpowers.html">Superpowers</a> 的区别是：Superpowers 更偏方法论，pstack 更偏日常工程 playbook + 模型分工。</p>
+<h3 id="_8">一个反直觉点</h3>
+<p>pstack 的目标不是“让 agent 写更多代码”，而是“让 agent 写更少但更好的代码”。它甚至把“少写”当成质量指标。</p>
+<h2 id="_9">拓展</h2>
+<h3 id="_10">思考题</h3>
+<ol>
+<li>23 个 playbook 里，哪三个最适合你当前的工作？为什么？</li>
+<li>如果团队只用一种模型，pstack 的模型分工思想还适用吗？</li>
+<li>“先复现再修”在什么情况下会被跳过？代价是什么？</li>
+<li><code>/blast-radius</code> 要求“用运行代码证明”，这和“让模型解释”有什么区别？</li>
+</ol>
+<h3 id="_11">练习</h3>
+<p>为你自己的项目设计一个 <code>/mode</code> 入口：</p>
+<ul>
+<li>列出 5 个最常用的 playbook；</li>
+<li>为每个 playbook 写 3–5 个步骤；</li>
+<li>指定每步需要调用的 skill；</li>
+<li>设计一个“完成前必须证明”的检查。</li>
+</ul>
+<h3 id="_12">接着读</h3>
+<ul>
+<li><a href="w2-superpowers.html">Superpowers：完整开发方法论</a></li>
+<li><a href="w3-matt-pocock-s-skills.html">Matt Pocock's Skills：小型、可组合的工程技能</a></li>
+<li><a href="w4-steering-claude-code.html">Steering Claude Code：技能、规则、hooks 的分工</a></li>
+</ul>
+    </div>
+    <div class="article-foot">
+      <div class="notice">
+        <strong>阅读说明：</strong>本页按原文顺序精译，合并了重复表述；所有关键论点、数据和结论均来自原文。
+      </div>
+      <div class="pager">
+        <a class="prev" href="w2-lecture-10-1-transcript.html">← 课堂实录：MCP、工具设计与 Code Mode（10/1）</a>
+        <a class="next" href="w3-matt-pocock-s-skills.html">Matt Pocock 的 Skills：用工程基本功对抗 Vibe Coding →</a>
+      </div>
+      </div>
+    </article>
+  </div>
+</main>
+<footer class="site-foot">
+  <p>CS146S: The Modern Software Developer · Fall 2026 · 中文学习站</p>
+  <p><a href="../schedule.html">回到课程表</a></p>
+</footer>
+<script>
+const bar = document.getElementById('progress');
+addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const max = h.scrollHeight - h.clientHeight;
+  bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+}, { passive: true });
+
+const tocLinks = [...document.querySelectorAll('.toc-nav a')];
+const tocDetails = document.querySelector('.toc-side details');
+if (tocDetails && window.matchMedia('(max-width: 1080px)').matches) {
+  tocDetails.removeAttribute('open');
+}
+const tocTargets = tocLinks
+  .map((link) => document.getElementById(link.getAttribute('href').slice(1)))
+  .filter(Boolean);
+if ('IntersectionObserver' in window && tocTargets.length) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      tocLinks.forEach((link) => link.classList.remove('active'));
+      const active = tocLinks.find((link) => link.getAttribute('href') === '#' + entry.target.id);
+      if (active) active.classList.add('active');
+    });
+  }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+  tocTargets.forEach((target) => observer.observe(target));
+}
+</script>
+</body>
+</html>
