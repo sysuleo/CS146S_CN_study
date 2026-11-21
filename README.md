@@ -1,19 +1,21 @@
+**[👉 打开在线学习站](https://liuw.tech/CS146S_CN_study/)** · 不用部署，浏览器直接看，首页即每周课表
+
 <div align="center">
 
 # CS146S 中文精读站
 
 **把一门关于 AI 原生软件开发的课，整理成可以逐段对照、反复复盘、直接部署的学习系统。**
 
-Stanford CS146S: The Modern Software Developer · Fall 2026
+课程原名：Stanford CS146S: The Modern Software Developer · Fall 2026
 
-非官方学习项目 · 官网内容同步于 2026-11-19
+非官方中文学习站 · 官网内容同步于 2026-11-19
 
-**👉 [在线学习站](https://liuw.tech/CS146S_CN_study/)** · [学习资料索引](https://liuw.tech/CS146S_CN_study/study/) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
+[学习资料索引](https://liuw.tech/CS146S_CN_study/study/) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
 
 </div>
 
 ![学习页](https://img.shields.io/badge/学习页-28-8c1515?style=flat-square)
-![本地链接](https://img.shields.io/badge/本地链接-402%20%2F%200%20缺失-1f6feb?style=flat-square)
+![本地链接](https://img.shields.io/badge/本地链接-554%20%2F%200%20缺失-1f6feb?style=flat-square)
 ![PPT](https://img.shields.io/badge/课堂PPT-52页-6f42c1?style=flat-square)
 ![部署](https://img.shields.io/badge/部署-GitHub%20Pages%20%7C%20Linux%20%7C%20Docker-2ea44f?style=flat-square)
 
@@ -67,20 +69,9 @@ CS146S 的材料更新快、来源分散：官网负责课程安排，阅读分�
 
 完整约定见 [RULES.md](RULES.md)。
 
-## 在线托管（GitHub Pages）
+## 在线访问
 
-**读者访问不需要服务器，直接打开网址就能学。**
-
-```text
-在线学习站：https://liuw.tech/CS146S_CN_study/    （首页即每周课表）
-学习资料索引：https://liuw.tech/CS146S_CN_study/study/
-```
-
-本仓库已启用 GitHub Pages：每次推送到 `main`，`.github/workflows/pages.yml` 会重建学习页，并把 `app/static` 的静态内容（课程表、学习页、PPT 和图表）发布上线。
-
-> 账号的 `sysuleo.github.io` 已绑定自定义域名 `liuw.tech`，因此站点通过该域名的子路径访问，并已启用 HTTPS 证书。用旧的 `sysuleo.github.io/CS146S_CN_study/` 访问会被 301 重定向到上述地址。
-
-GitHub Pages **不会提供** `/admin`、`/api/jobs`、`/api/restart` 或本地端口配置；这些能力只在自托管服务中存在。
+站点已发布在 GitHub Pages：**https://liuw.tech/CS146S_CN_study/**（首页即每周课表），学习资料索引在 `/study/`。域名、证书、构建流程与静态版的功能边界等部署细节，见 [docs/PUBLISH.md](docs/PUBLISH.md)。
 
 ## 快速起服
 
@@ -186,10 +177,11 @@ make docker    # 启动 Docker
 当前验收结果：
 
 ```text
-local links: 402, missing: 0
-index cards: 20
-study pages: 20
-schedule study links: 21
+local links: 554, missing: 0
+index cards: 28
+study pages: 28
+schedule study links: 29
+schedule 中译 chips: 25
 ```
 
 ### 内容源与生成物
@@ -226,7 +218,7 @@ schedule study links: 21
 ├─ app/
 │  ├─ server.py              # FastAPI：静态站、构建任务、重启接口
 │  └─ static/
-│     ├─ index.html          # GitHub Pages 根入口，跳转到 study/
+│     ├─ index.html          # 站点根入口，跳转到 schedule.html
 │     ├─ schedule.html       # 课程表
 │     ├─ admin.html          # 运维面板
 │     └─ study/              # 28 个学习页 + 图片 / PPT 资源
