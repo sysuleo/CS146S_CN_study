@@ -20,10 +20,14 @@ index = (ROOT / "app" / "static" / "study/index.html").read_text(encoding="utf-8
 schedule = (ROOT / "app" / "static" / "schedule.html").read_text(encoding="utf-8")
 pages = [p for p in (ROOT / "app" / "static" / "study").glob("*.html") if p.name != "index.html"]
 
+CARD_ATTR = 'class="card"'
+MINI_ATTR = 'class="mini"'
+STUDY_LINK = 'href="study/'
+
 print(f"local links: {total}, missing: {len(missing)}")
 for item in missing[:30]:
     print("MISSING", item)
-print(f"index cards: {index.count('class=\"card\"')}")
+print(f"index cards: {index.count(CARD_ATTR)}")
 print(f"study pages: {len(pages)}")
-print(f"schedule study links: {schedule.count('href=\"study/')}")
-print(f"schedule 中译 chips: {schedule.count('class=\"mini\"')}")
+print(f"schedule study links: {schedule.count(STUDY_LINK)}")
+print(f"schedule 中译 chips: {schedule.count(MINI_ATTR)}")
