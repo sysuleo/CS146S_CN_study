@@ -8,7 +8,7 @@ Stanford CS146S: The Modern Software Developer · Fall 2026
 
 非官方学习项目 · 官网内容同步于 2026-11-19
 
-**👉 [在线学习站](http://liuw.tech/CS146S_CN_study/)** · [课程表](http://liuw.tech/CS146S_CN_study/schedule.html) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
+**👉 [在线学习站](https://liuw.tech/CS146S_CN_study/)** · [课程表](https://liuw.tech/CS146S_CN_study/schedule.html) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
 
 </div>
 
@@ -72,13 +72,13 @@ CS146S 的材料更新快、来源分散：官网负责课程安排，阅读分�
 **读者访问不需要服务器，直接打开网址就能学。**
 
 ```text
-在线学习站：http://liuw.tech/CS146S_CN_study/
-课程表：http://liuw.tech/CS146S_CN_study/schedule.html
+在线学习站：https://liuw.tech/CS146S_CN_study/
+课程表：https://liuw.tech/CS146S_CN_study/schedule.html
 ```
 
 本仓库已启用 GitHub Pages：每次推送到 `main`，`.github/workflows/pages.yml` 会重建学习页，并把 `app/static` 的静态内容（课程表、学习页、PPT 和图表）发布上线。
 
-> 账号的 `sysuleo.github.io` 绑定了自定义域名 `liuw.tech`，因此站点通过该域名的子路径访问。当前 `liuw.tech` 的 DNS 仍指向 GitHub Pages 旧 IP，HTTPS 证书尚未签发，请先用 HTTP 打开；修复步骤见 [docs/PUBLISH.md](docs/PUBLISH.md)。
+> 账号的 `sysuleo.github.io` 已绑定自定义域名 `liuw.tech`，因此站点通过该域名的子路径访问，并已启用 HTTPS 证书。用旧的 `sysuleo.github.io/CS146S_CN_study/` 访问会被 301 重定向到上述地址。
 
 GitHub Pages **不会提供** `/admin`、`/api/jobs`、`/api/restart` 或本地端口配置；这些能力只在自托管服务中存在。
 
