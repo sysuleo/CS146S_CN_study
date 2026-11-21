@@ -1,6 +1,6 @@
 # 本地运行与部署
 
-> 只想在线阅读，不需要部署服务器：直接访问 <https://liuw.tech/CS146S_CN_study/>，或使用 [GitHub Pages 静态托管](PUBLISH.md)。本文件适用于本地跑一份、二次构建，以及需要 `/admin` 和构建任务 API 的自托管场景（Linux / Windows / Docker）。
+> 只想在线阅读，不需要部署服务器：直接访问 <https://oreomolly.cn/CS146S_CN_study/>，或使用 [GitHub Pages 静态托管](PUBLISH.md)。本文件适用于本地跑一份、二次构建，以及需要 `/admin` 和构建任务 API 的自托管场景（Linux / Windows / Docker）。
 
 ## 1. 直接启动
 

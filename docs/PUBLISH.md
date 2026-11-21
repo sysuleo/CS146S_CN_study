@@ -12,21 +12,26 @@
 本仓库的实际发布地址：
 
 ```text
-https://liuw.tech/CS146S_CN_study/
+https://oreomolly.cn/CS146S_CN_study/
 ```
 
-因为账号的 `sysuleo.github.io` 已绑定自定义域名 `liuw.tech`，GitHub 会把本项目的站点重定向到 `liuw.tech/CS146S_CN_study/`。本仓库名不是 `<用户名>.github.io`，所以不会占用根域。
+因为账号的 `sysuleo.github.io` 已绑定自定义域名 `oreomolly.cn`，GitHub 会把本项目的站点重定向到 `oreomolly.cn/CS146S_CN_study/`。本仓库名不是 `<用户名>.github.io`，所以不会占用根域。
+
+> 自定义域名只能配置在 `<用户名>.github.io` 这个用户站仓库上，project site 会全部跟随它。因此换域名时只需改用户站的 **Settings → Pages → Custom domain** 一处，本项目仓库不需要 `CNAME` 文件。
 
 ## HTTPS 与 DNS
 
-站点已启用 HTTPS，证书由 GitHub Pages 自动签发（Let's Encrypt，`CN=liuw.tech`，SAN 含 `liuw.tech` 与 `www.liuw.tech`）。
+站点已启用 HTTPS，证书由 GitHub Pages 自动签发（Let's Encrypt，`CN=oreomolly.cn`，SAN 含 `oreomolly.cn` 与 `www.oreomolly.cn`）。
 
 域名侧配置（已生效，供复刻者参考）：
 
-- 根域 `liuw.tech` 的 A 记录指向 GitHub Pages 当前 IP：`185.199.108.153`、`185.199.109.153`、`185.199.110.153`、`185.199.111.153`
-- `www` 通过 CNAME 指向 `sysuleo.github.io`
+- 根域 `oreomolly.cn` 的 A 记录指向 GitHub Pages 当前 IP：`185.199.108.153`、`185.199.109.153`、`185.199.110.153`、`185.199.111.153`
+- `www` 通过 CNAME 指向 `sysuleo.github.io`，访问时由 GitHub 301 到根域
+- 根域**不要**添加 AAAA 记录：GitHub Pages 自定义域名不提供 IPv6 直连，加了会让部分网络环境下的访问直接失败
 
-> 需要避开的旧配置：GitHub Pages 早期 IP `192.30.252.153`、`192.30.252.154` 只服务 HTTP，证书为 `*.github.com`，指向它们会让 `https://liuw.tech` 报证书不匹配。把 A 记录改到新 IP 后证书会自动签发，无需在 Pages 设置里反复保存 Custom domain（值未改动时 Save 按钮本就是灰的）。
+> 需要避开的旧配置：GitHub Pages 早期 IP `192.30.252.153`、`192.30.252.154` 只服务 HTTP，证书为 `*.github.com`，指向它们会让 `https://<自定义域名>` 报证书不匹配。把 A 记录改到新 IP 后证书会自动签发，无需在 Pages 设置里反复保存 Custom domain（值未改动时 Save 按钮本就是灰的）。
+
+> 迁移记录：站点原使用 `liuw.tech`，2026-11-21 切换至 `oreomolly.cn`。`liuw.tech` 已不再由 GitHub Pages 提供服务，旧链接会返回 404。
 
 ## 发布内容
 

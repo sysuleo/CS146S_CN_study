@@ -1,4 +1,4 @@
-**[👉 打开在线学习站](https://liuw.tech/CS146S_CN_study/)** · [⭐ Star 这个仓库](https://github.com/sysuleo/CS146S_CN_study)
+**[👉 打开在线学习站](https://oreomolly.cn/CS146S_CN_study/)** · [⭐ Star 这个仓库](https://github.com/sysuleo/CS146S_CN_study)
 
 <div align="center">
 
@@ -26,10 +26,10 @@ CS146S 的材料分散在官网、博客、论文、产品文档、Slides、tran
 
 | 你想做的事 | 点这里 |
 |---|---|
-| 按周看主题、阅读、Slides 和视频 | [**课程表**](https://liuw.tech/CS146S_CN_study/schedule.html)：打开站点就是这一页 |
-| 挑一篇中译开始读 | [**学习资料索引**](https://liuw.tech/CS146S_CN_study/study/)：28 篇，按周分组，标注时长与类型 |
-| 先看一篇长文感受一下 | [深入 Claude Code：生产级 Agent 的设计空间](https://liuw.tech/CS146S_CN_study/study/w1-dive-into-claude-code.html)（45 min） |
-| 看课堂实录与逐页 PPT | [生产级 Coding Agent 的 Harness 解剖（9/24）](https://liuw.tech/CS146S_CN_study/study/w1-lecture-9-24-transcript.html)（20 min） |
+| 按周看主题、阅读、Slides 和视频 | [**课程表**](https://oreomolly.cn/CS146S_CN_study/schedule.html)：打开站点就是这一页 |
+| 挑一篇中译开始读 | [**学习资料索引**](https://oreomolly.cn/CS146S_CN_study/study/)：28 篇，按周分组，标注时长与类型 |
+| 先看一篇长文感受一下 | [深入 Claude Code：生产级 Agent 的设计空间](https://oreomolly.cn/CS146S_CN_study/study/w1-dive-into-claude-code.html)（45 min） |
+| 看课堂实录与逐页 PPT | [生产级 Coding Agent 的 Harness 解剖（9/24）](https://oreomolly.cn/CS146S_CN_study/study/w1-lecture-9-24-transcript.html)（20 min） |
 
 不需要注册、不需要部署，浏览器打开就能读。
 
