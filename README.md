@@ -8,7 +8,7 @@ Stanford CS146S: The Modern Software Developer · Fall 2026
 
 非官方学习项目 · 官网内容同步于 2026-11-19
 
-**👉 [在线学习站](https://liuw.tech/CS146S_CN_study/)** · [课程表](https://liuw.tech/CS146S_CN_study/schedule.html) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
+**👉 [在线学习站](https://liuw.tech/CS146S_CN_study/)** · [学习资料索引](https://liuw.tech/CS146S_CN_study/study/) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
 
 </div>
 
@@ -72,8 +72,8 @@ CS146S 的材料更新快、来源分散：官网负责课程安排，阅读分�
 **读者访问不需要服务器，直接打开网址就能学。**
 
 ```text
-在线学习站：https://liuw.tech/CS146S_CN_study/
-课程表：https://liuw.tech/CS146S_CN_study/schedule.html
+在线学习站：https://liuw.tech/CS146S_CN_study/    （首页即每周课表）
+学习资料索引：https://liuw.tech/CS146S_CN_study/study/
 ```
 
 本仓库已启用 GitHub Pages：每次推送到 `main`，`.github/workflows/pages.yml` 会重建学习页，并把 `app/static` 的静态内容（课程表、学习页、PPT 和图表）发布上线。

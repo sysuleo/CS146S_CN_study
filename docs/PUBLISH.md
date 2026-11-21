@@ -30,9 +30,9 @@ https://liuw.tech/CS146S_CN_study/
 
 ## 发布内容
 
-- `app/static/index.html`：根入口，跳转到 `study/`
-- `app/static/schedule.html`：课程表
-- `app/static/study/`：28 个学习页、PPT、原文图表
+- `app/static/index.html`：根入口，跳转到 `schedule.html`
+- `app/static/schedule.html`：每周课表，同时作为站点首页
+- `app/static/study/`：28 个学习页、PPT、原文图表（`study/index.html` 是学习资料索引页）
 - `app/static/.nojekyll`：工作流生成，避免 Pages 的 Jekyll 处理
 
 工作流会先运行：
