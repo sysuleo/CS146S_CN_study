@@ -1,64 +1,53 @@
-**[👉 打开在线学习站](https://liuw.tech/CS146S_CN_study/)** · 不用部署，浏览器直接看，首页即每周课表
+**[👉 打开在线学习站](https://liuw.tech/CS146S_CN_study/)** · [⭐ Star 这个仓库](https://github.com/sysuleo/CS146S_CN_study)
 
 <div align="center">
 
 # CS146S 中文精读站
 
-**把一门关于 AI 原生软件开发的课，整理成可以逐段对照、反复复盘、直接部署的学习系统。**
+**把一门关于 AI 原生软件开发的课，整理成可以逐段对照、反复复盘的中文学习站。**
 
 课程原名：Stanford CS146S: The Modern Software Developer · Fall 2026
 
 非官方中文学习站 · 官网内容同步于 2026-11-19
 
-[学习资料索引](https://liuw.tech/CS146S_CN_study/study/) · [快速起服](#快速起服) · [学习规则](RULES.md) · [发布说明](docs/PUBLISH.md) · [部署文档](docs/DEPLOY.md) · [后续事项](TODO.md)
-
 </div>
 
 ![学习页](https://img.shields.io/badge/学习页-28-8c1515?style=flat-square)
 ![本地链接](https://img.shields.io/badge/本地链接-554%20%2F%200%20缺失-1f6feb?style=flat-square)
-![PPT](https://img.shields.io/badge/课堂PPT-52页-6f42c1?style=flat-square)
-![部署](https://img.shields.io/badge/部署-GitHub%20Pages%20%7C%20Linux%20%7C%20Docker-2ea44f?style=flat-square)
+![课堂PPT](https://img.shields.io/badge/课堂PPT-52页-6f42c1?style=flat-square)
 
 > 本项目不隶属于 Stanford，也不代表课程团队。课程原文、讲稿、PPT 与图片的版权归原作者或原机构所有；本仓库只整理个人学习所需的翻译、注释与阅读工具。详见 [NOTICE.md](NOTICE.md)。
 
-## 页面预览
+## 打开就能开始
 
-| 首页 | 原文逐段对照 |
+CS146S 的材料分散在官网、博客、论文、产品文档、Slides、transcript 和视频里。只收集链接的话，复习时仍然要在十几个标签页之间来回切。
+
+这里把同一周的材料收进一个中文站点，每篇固定按「总结 → 原文逐段对照 → 学习者视角 → 延伸练习」组织：
+
+| 你想做的事 | 点这里 |
 |---|---|
-| ![首页](docs/images/home.png) | ![原文逐段对照](docs/images/study-bilingual.png) |
+| 按周看主题、阅读、Slides 和视频 | [**课程表**](https://liuw.tech/CS146S_CN_study/schedule.html)：打开站点就是这一页 |
+| 挑一篇中译开始读 | [**学习资料索引**](https://liuw.tech/CS146S_CN_study/study/)：28 篇，按周分组，标注时长与类型 |
+| 先看一篇长文感受一下 | [深入 Claude Code：生产级 Agent 的设计空间](https://liuw.tech/CS146S_CN_study/study/w1-dive-into-claude-code.html)（45 min） |
+| 看课堂实录与逐页 PPT | [生产级 Coding Agent 的 Harness 解剖（9/24）](https://liuw.tech/CS146S_CN_study/study/w1-lecture-9-24-transcript.html)（20 min） |
 
-课程表：
+不需要注册、不需要部署，浏览器打开就能读。
 
-![课程表](docs/images/schedule.png)
-
-## 这不是一个链接合集
-
-CS146S 的材料更新快、来源分散：官网负责课程安排，阅读分布在博客、论文、产品文档和 GitHub，课堂内容又分别落在 Slides、transcript 和视频里。只收集链接，复习时仍然要在十几个标签页之间来回切换。
-
-这个项目把同一周的材料收进一个可部署的学习站，并为每篇材料建立固定的学习闭环：
-
-1. **先看总结**：用几分钟建立问题意识和论证主线。
-2. **再读原文对照**：英文段落与中文段落交替出现，随时回到原文核对。
-3. **进入学习者视角**：把文章放回课程脉络，指出真正可迁移的做法和容易误解的地方。
-4. **最后做拓展**：用思考题、练习和延伸阅读把“看懂”变成“会用”。
-
-因此，它更适合“认真学一遍并留下可复习资料”的场景，而不是替代课程官网或作业说明。
-
-## 你会得到什么
+## 这里有什么
 
 | 模块 | 内容 |
 |---|---|
 | 课程表 | 按周整理主题、阅读、课堂安排、Slides、transcript、嘉宾与视频链接，并回链到对应学习页 |
-| 学习页 | 28 个页面，每页固定包含“总结 / 原文逐段对照翻译 / 学习者视角 / 拓展” |
-| 课堂资料 | 3 篇课堂实录，正文按讲课顺序整理；52 张 PPT 按讲稿段落逐页插入 |
-| 原文图表 | 107 个本地图片文件（含多格式兼容副本），按原文 H2/H3 原位保留 |
-| 阅读体验 | 左侧粘性目录、滚动高亮、窄屏折叠；页面不依赖前端框架 |
-| 部署与运维 | FastAPI 静态站、构建任务 API、`/admin` 面板、Docker 与 systemd 方案 |
-| 质量检查 | 本地链接、页面结构、PPT 数量和缺失图片均有脚本可复核 |
+| 学习页 | 28 个页面，每页固定包含「总结 / 原文逐段对照翻译 / 学习者视角 / 拓展」 |
+| 课堂资料 | 3 篇课堂实录按讲课顺序整理；52 张 PPT 按讲稿段落逐页插入 |
+| 原文图表 | 107 个本地图片（含多格式兼容副本），按原文 H2/H3 原位保留 |
+| 阅读体验 | 左侧粘性目录、滚动高亮、窄屏折叠，不依赖前端框架 |
+
+页面结构、本地链接、PPT 数量和缺失图片都有脚本可复核（`make check`），不是靠人工点开的清单。
 
 ### 翻译与整理原则
 
-项目的目标不是“把英文换成中文”，而是保留原文的技术论证，同时让中文读者读得下去：
+目标不是“把英文换成中文”，而是保留原文的技术论证，同时让中文读者读得下去：
 
 - **准确优先于流畅，流畅优先于简洁**：不省略论证、数据和限制条件。
 - **按段落对照**：不按单词硬切，也不把总结混进翻译。
@@ -69,68 +58,15 @@ CS146S 的材料更新快、来源分散：官网负责课程安排，阅读分�
 
 完整约定见 [RULES.md](RULES.md)。
 
-## 在线访问
+## 页面预览
 
-站点已发布在 GitHub Pages：**https://liuw.tech/CS146S_CN_study/**（首页即每周课表），学习资料索引在 `/study/`。域名、证书、构建流程与静态版的功能边界等部署细节，见 [docs/PUBLISH.md](docs/PUBLISH.md)。
+| 首页 | 原文逐段对照 |
+|---|---|
+| ![首页](docs/images/home.png) | ![原文逐段对照](docs/images/study-bilingual.png) |
 
-## 快速起服
+课程表：
 
-### Linux / macOS
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-
-cp .env.example .env
-chmod +x start.sh stop.sh restart.sh
-./start.sh
-```
-
-`start.sh` 默认在后台启动，日志写入 `.local/server.log`，PID 写入 `.local/server.pid`。停止服务用 `./stop.sh`，重启用 `./restart.sh`；需要前台调试时用 `FOREGROUND=1 ./start.sh`。
-
-### Windows PowerShell
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-Copy-Item .env.example .env
-.\start.ps1
-```
-
-### Docker
-
-```bash
-cp .env.example .env
-docker compose up --build -d
-```
-
-默认地址：
-
-- 学习站：<http://127.0.0.1:8787/>
-- 课程表：<http://127.0.0.1:8787/schedule>
-- 运维面板：<http://127.0.0.1:8787/admin>
-- 健康检查：<http://127.0.0.1:8787/api/health>
-
-### 修改端口
-
-端口只在一个地方配置：
-
-```bash
-# .env
-HOST=0.0.0.0
-PORT=9000
-```
-
-```bash
-./restart.sh
-# 或
-docker compose up --build -d
-```
-
-`PORT` 同时控制服务监听端口和 Docker 宿主机映射端口。Nginx、systemd 与防火墙配置见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+![课程表](docs/images/schedule.png)
 
 ## 内容进度
 
@@ -155,63 +91,19 @@ docker compose up --build -d
 - 产品文档的超长目录、兼容性名单可概括处理，但会在页内注明。
 - 2026 年秋季课程仍在进行，后续官网更新需要重新同步。
 
-## 构建与验收
+## 本地运行与二次构建
 
-### 标准重建
-
-```bash
-python tools/slides.py    # 按逐页锚点插入课堂 PPT
-python tools/build.py     # 由 content/study_src 生成学习页并回链课表
-python tools/check.py     # 检查本地链接、页面结构和资源数量
-```
-
-也可以使用：
+**只是想读，上面三个链接就够了。** 需要自己跑一份或改内容时：
 
 ```bash
-make build     # 只重建页面
-make full      # PPT + 页面 + 检查
-make check     # 只做检查
-make docker    # 启动 Docker
+make build   # 由 content/study_src 重建学习页
+make check   # 检查本地链接与资源数量
 ```
 
-当前验收结果：
+venv / Docker / systemd / Nginx / 运维接口 / 端口配置见 [docs/DEPLOY.md](docs/DEPLOY.md)；静态托管与自定义域名见 [docs/PUBLISH.md](docs/PUBLISH.md)。
 
-```text
-local links: 554, missing: 0
-index cards: 28
-study pages: 28
-schedule study links: 29
-schedule 中译 chips: 25
-```
-
-### 内容源与生成物
-
-- 内容源：`content/study_src/*.md`
-- 课表源：`content/schedule.md` 与 `data/syllabus2026.json`
-- 生成物：`app/static/study/*.html`
-
-不要直接修改生成后的学习页。先改 Markdown 源文件，再运行构建脚本；否则下一次构建会覆盖手工修改。
-
-## 部署与运维
-
-`app/server.py` 提供静态站和最小的运维接口：
-
-| 接口 | 用途 |
-|---|---|
-| `GET /api/health` | 返回服务状态、端口和学习页数量 |
-| `POST /api/jobs` | 创建构建任务，`kind` 取 `rebuild`、`sync` 或 `full` |
-| `GET /api/jobs` | 查看最近任务 |
-| `GET /api/jobs/{id}` | 查看任务状态与日志尾部 |
-| `POST /api/restart` | 退出进程，交给 systemd 或 Docker 重新拉起 |
-
-说明：
-
-- 这里的“建单”指**站点构建任务**，不是易协作或内部工单。
-- 开启 `STUDY_ALLOW_RESTART=1` 后，`/api/restart` 才会生效。
-- 设置 `STUDY_API_TOKEN` 后，创建任务和重启需要携带 `X-API-Token`。
-- 后台任务日志写入 `.local/jobs/`，不会进入 Git。
-
-## 项目结构
+<details>
+<summary>项目结构</summary>
 
 ```text
 .
@@ -234,10 +126,10 @@ schedule 中译 chips: 25
 │  └─ sync_syllabus.py       # 同步官网 Syllabus
 ├─ docs/
 │  ├─ ARCHITECTURE.md        # 构建链与目录说明
-│  ├─ DEPLOY.md              # Linux / systemd / Docker / Nginx
+│  ├─ DEPLOY.md              # 本地运行 / Linux / systemd / Docker / Nginx
 │  ├─ PUBLISH.md             # GitHub Pages 静态发布
 │  └─ images/                # README 页面截图
-├─ .github/workflows/        # GitHub Pages 自动发布
+├─ .github/workflows/        # 推送后自动发布静态站
 ├─ .local/                   # 原始抓取、缓存、任务日志（不提交）
 ├─ Dockerfile
 ├─ docker-compose.yml
@@ -247,6 +139,8 @@ schedule 中译 chips: 25
 ├─ NOTICE.md                 # 第三方内容与版权边界
 └─ README.md
 ```
+
+</details>
 
 ## 与 Lucaswang81/CS146S_CN 的区别
 
@@ -267,49 +161,44 @@ schedule 中译 chips: 25
 | 社区与商业化 | 无广告、无社群导流 | 有交流群、赞助位和付费服务链接 |
 | 许可证 | MIT 覆盖本项目代码与原创注释，第三方内容另见 NOTICE | MIT |
 
-### 参考项目的优势
-
-- **作业与旧课程更完整**：适合需要直接找作业、Fall 2025 资源和课程周边材料的人。
-- **资源面更广**：集中了大量外部中文链接、PPT 文件和课程推荐。
-- **社区入口明确**：适合希望参与交流、获取课程信息的读者。
-
-### 本项目的优势
-
-- **学习深度更高**：不是只给链接，而是给逐段对照、学习者视角和练习。
-- **原文可追溯**：保留原文 H2/H3、图表和逐页 PPT，方便回到出处核对。
-- **工具链完整**：内容源、构建、检查、部署和运维面板都在同一个仓库。
-- **边界更清楚**：已完成与未完成、原创内容与第三方内容分开说明。
-
-### 各自的不足
-
-| 项目 | 不足 |
-|---|---|
-| 本项目 | 不收录作业；只做 Fall 2026；新阅读尚未全部完成中译；没有社群与外部资源大全 |
-| 参考项目 | 更偏课程导航与资源归档；逐篇原文对照、讲稿 PPT 锚定和可部署站点不是其重点 |
-
 **怎么选：**
 
 - 想找作业、Fall 2025 归档和更多外部链接，先看参考项目。
 - 想把 Fall 2026 的阅读真正读懂、对照原文复习，或部署成自己的学习站，使用本项目。
 - 两者可以互补；课程事实与时间安排始终以[课程官网](https://themodernsoftware.dev/)为准。
 
-## 为什么有 LICENSE，我们有吗
+<details>
+<summary>更细的对比：双方优势与不足</summary>
 
-**有。本仓库现在包含 [MIT LICENSE](LICENSE)。**
+**参考项目的优势**
 
-在开源仓库里放 `LICENSE`，不是“额外装饰”，而是在明确别人可以使用什么：
+- **作业与旧课程更完整**：适合需要直接找作业、Fall 2025 资源和课程周边材料的人。
+- **资源面更广**：集中了大量外部中文链接、PPT 文件和课程推荐。
+- **社区入口明确**：适合希望参与交流、获取课程信息的读者。
 
-- 没有许可证时，默认版权规则是“保留所有权利”。别人即使能看见代码，也不能放心复制、修改或再发布。
-- MIT 允许他人使用、修改、分发和商用本项目中有权许可的部分，同时要求保留版权与许可声明。
-- 许可证不会自动改变第三方内容的版权。课程原文、transcript、Google Slides、原文图表与截图仍归各自作者或机构所有。
+**本项目的优势**
 
-因此，本仓库的 MIT 许可只覆盖：
+- **学习深度更高**：不是只给链接，而是给逐段对照、学习者视角和练习。
+- **原文可追溯**：保留原文 H2/H3、图表和逐页 PPT，方便回到出处核对。
+- **工具链完整**：内容源、构建、检查、部署和运维面板都在同一个仓库。
+- **边界更清楚**：已完成与未完成、原创内容与第三方内容分开说明。
 
-- `app/`、`tools/` 中的代码与构建脚本；
-- 站点样式与交互实现；
-- 本项目独立撰写的总结、导读、学习者视角和拓展内容。
+**各自的不足**
 
-**不覆盖**课程原文、课堂讲稿、PPT、原文图片及第三方仓库内容。若你是权利方并希望调整或移除某份材料，请通过仓库维护者联系处理。以上是项目层面的版权说明，不构成法律意见。
+| 项目 | 不足 |
+|---|---|
+| 本项目 | 不收录作业；只做 Fall 2026；新阅读尚未全部完成中译；没有社群与外部资源大全 |
+| 参考项目 | 更偏课程导航与资源归档；逐篇原文对照、讲稿 PPT 锚定和可部署站点不是其重点 |
+
+</details>
+
+## 许可证与版权边界
+
+本仓库包含 [MIT LICENSE](LICENSE)。没有许可证时默认是“保留所有权利”，别人即使能看见代码，也不能放心复制或再发布；MIT 允许使用、修改、分发和商用本项目**有权许可的部分**，同时要求保留版权与许可声明。
+
+MIT 覆盖 `app/`、`tools/` 中的代码与构建脚本、站点样式与交互实现，以及本项目独立撰写的总结、导读、学习者视角和拓展内容。
+
+**不覆盖**课程原文、课堂讲稿、PPT、原文图片及第三方仓库内容——这些权利仍归各自作者或机构所有。若你是权利方并希望调整或移除某份材料，请通过仓库维护者联系处理。以上是项目层面的说明，不构成法律意见。
 
 ## 来源与致谢
 
@@ -318,4 +207,6 @@ schedule 中译 chips: 25
 - 参考项目：[Lucaswang81/CS146S_CN](https://github.com/Lucaswang81/CS146S_CN)
 - 课程阅读、讲稿、PPT 与图片：归原作者与原机构所有
 
-本项目的 README 结构参考了同类项目的公开组织方式，但正文、对比结论与项目说明均为独立撰写。若你发现链接失效、翻译不准确或 PPT 匹配错误，欢迎按 [RULES.md](RULES.md) 的流程提交修订。
+---
+
+**觉得有用就点个 ⭐ [Star](https://github.com/sysuleo/CS146S_CN_study)。** 没有广告、没有付费墙，Star 是这个项目最直接的反馈；发现错译或失效链接，欢迎按 [RULES.md](RULES.md) 提修订。
