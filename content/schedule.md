@@ -13,6 +13,7 @@
 - 先修：CS111/CS161 同等编程经验，建议有 CS221/229
 - 讲师：Mihail Eric（Instructor）
 - 助教：Isaac Kan（Head TA）、Vijay Daita、Patrick Hua
+- Office Hours：Mihail Eric 仅预约；Isaac Kan 周二 16:00–17:00 Coda 地下层；Vijay Daita 周三 18:00–19:00 Coda 3 层；Patrick Hua 周四 13:00–14:00 Gates 4 层
 
 ## 每周课表
 
@@ -26,7 +27,7 @@
 | Week 6（10/27、10/29） | Agentic code review：最佳实践与架构<br>[Slides](https://docs.google.com/presentation/d/1u8WYtFj0O9yc4H4JX9D4URYKhDzvrAGKLzn38DXSrak/edit?usp=drive_link) | 嘉宾：Silas Alberti（Chief Research Officer @ Cognition）<br>[个人主页](https://sil.as) | Agent 代码审查 | [Layered Code Review and Risk-Based Human Oversight](https://x.com/addyosmani/status/2114604912520921136)<br>[Coordinating Specialist Review Agents at Scale](https://blog.cloudflare.com/ai-code-review)<br>[Beyond the Diff: Context, Testing, and Model Selection](https://greptile.com/blog/how-to-build-a-code-review-agent) |
 | Week 7（11/3、11/5） | **停课：学校假期** | 嘉宾：Isaac Evans（CEO @ Semgrep）<br>[个人主页](https://www.linkedin.com/in/isaacevans) | 安全（Security） | — |
 | Week 8（11/10、11/12） | Background agents：异步启动任务<br>[Slides](https://docs.google.com/presentation/d/1R8Pr3RNAFQiw8mHKbXopOhxi_h9zuEeUKrJkxCZ5Fio/edit?usp=sharing) | 嘉宾：Rajesh Bhatia（Senior Director @ Cloudflare）<br>[个人主页](https://www.linkedin.com/in/rajeshbh) | 后台 Agent | [Spotify: From Migration Scripts to Agent Fleets](https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1)<br>[Stripe: From Slack Message to Review-Ready PR](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents)<br>[Ramp: Giving Agents the Tools to Prove Their Work](https://builders.ramp.com/post/why-we-built-our-background-agent)<br>[LangChain: Inside an Open-Source Software Factory](https://github.com/langchain-ai/open-swe) |
-| Week 9（11/17、11/19） | The Software Factory and self-improving software systems<br>[Slides](https://docs.google.com/presentation/d/1hxlLspHQ2WOs2tZmCN3gdDi7dfbbRorxzPr65HyyE6Y/edit?usp=sharing) | 嘉宾：Michele Catasta（President @ Replit）<br>[个人主页](https://www.linkedin.com/in/michelecatasta) | The Software Factory | [From Issue to Pull Request: A Warp Factory Example](https://github.com/warpdotdev/warp-factory-examples/tree/main/examples/02-sdlc-issue-to-pr)<br>[The Software Factory](https://software-factory.dev)<br>[OpenInspect](https://openinspect.dev)<br>[WarpBench: Evaluating Coding Agents](https://warp.dev/factories/benchmarks/warpbench) |
+| Week 9（11/17、11/19） | 软件工厂与自改进的软件系统（The Software Factory and self-improving software systems）<br>[Slides](https://docs.google.com/presentation/d/1hxlLspHQ2WOs2tZmCN3gdDi7dfbbRorxzPr65HyyE6Y/edit?usp=sharing) | 嘉宾：Michele Catasta（President @ Replit）<br>[个人主页](https://www.linkedin.com/in/michelecatasta) | The Software Factory | [From Issue to Pull Request: A Warp Factory Example](https://github.com/warpdotdev/warp-factory-examples/tree/main/examples/02-sdlc-issue-to-pr)<br>[The Software Factory](https://software-factory.dev)<br>[OpenInspect](https://openinspect.dev)<br>[WarpBench: Evaluating Coding Agents](https://warp.dev/factories/benchmarks/warpbench) |
 | Week 10（12/1、12/3） | Building the AI-native team（MCP portal、LLM gateway、组织模式、成本优化、模型路由） | Software taste and what's left for humans | The AI-Native Team + The Future | — |
 
 ## 每周主题细目
@@ -107,19 +108,20 @@
 - Issue-to-PR 流水线与触发器（Slack、Linear、GitHub）
 - 周二 11/10 讲背景 agent；周四 11/12 为 Cloudflare 嘉宾 Rajesh Bhatia
 
-### Week 9: Building an AI-Native Team
+### Week 9: The Software Factory
+
+- 软件工厂作为一种运营模式
+- 自运行、自改进的软件系统
+- 部署后运行与保护 agents
+- 周二 11/17 讲软件工厂与自改进软件系统（无嘉宾）；周四 11/19 嘉宾 Michele Catasta（President @ Replit）
+
+### Week 10: The AI-Native Team + The Future
 
 - MCP portal 与集中化、带权限的工具访问
 - LLM gateway、模型路由与成本优化
 - 组织级落地模式
-- 周二 11/17 嘉宾 Elad Gil；周四 11/19 嘉宾 Amjad Masad（Replit CEO）
-
-### Week 10: The Software Factory + The Future
-
-- 自运行、自改进的软件系统
-- 部署后运行与保护 agents
-- AI 软件工程的下一步
-- 周二 12/1 讲大团队中的 coding agents；周四 12/3 讲 Software Factory
+- 软件品味与人类判断的持久价值
+- 周二 12/1 讲 AI-native team 建设（MCP portal、LLM gateway、组织模式、成本优化、模型路由）；周四 12/3 讲软件品味与留给人类的工作
 
 ## 说明
 
